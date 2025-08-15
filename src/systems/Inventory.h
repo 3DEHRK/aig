@@ -10,6 +10,11 @@ public:
     bool removeItemById(const std::string& id, int count = 1);
     const std::vector<ItemPtr>& items() const;
     size_t capacity() const;
+
+    // helpers for UI/editor
+    ItemPtr getItem(size_t index) const;
+    void setItem(size_t index, const ItemPtr& item);
+
 private:
     size_t cap;
     std::vector<ItemPtr> slots;

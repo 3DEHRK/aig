@@ -1,5 +1,15 @@
 # SFML Game Framework
 
+🌾🎮🚂🧩✨  A tiny playground for pixel games — built with C++ & SFML — you deserve some beauty!
+
+```
+   _/_/_/    _/_/    _/_/_/   _/_/    _/      _/  _/_/_/
+  _/    _/  _/    _/  _/    _/ _/  _/   _/  _/ _/
+ _/_/_/    _/_/_/   _/_/_/   _/    _/ _/  _/  _/_/_/
+_/        _/       _/       _/      _/          _/
+_/        _/       _/       _/      _/      _/_/_/
+```
+
 A compact 2D top‑down pixel-game framework built with C++ and SFML (inspired by Stardew Valley).
 
 This repository contains a working skeleton and many gameplay systems implemented so you can iterate quickly:
@@ -8,7 +18,7 @@ This repository contains a working skeleton and many gameplay systems implemente
 - resource manager (textures, fonts)
 - basic entity system (Player, NPC, ItemEntity, Crop)
 - tilemap with simple collision
-- inventory system (logic only)
+- inventory system (logic + basic UI)
 - dialog manager
 - quest system (collect-item example)
 - save/load skeleton using nlohmann::json
@@ -57,20 +67,22 @@ Build (recommended)
 
 Assets and working directory
 - CMake is configured to copy `assets/` into the build directory after a successful build. Ensure you have `assets/fonts/arial.ttf` in the source `assets/` folder so UI text renders correctly.
-- If the game cannot find the font, dialogs will still run but text will not be visible. See `assets/fonts/README.txt` for details.
+- If the game cannot find the font, dialogs will still run but text may not be visible. See `assets/fonts/README.txt` for details.
 
 ---
 
 ## Controls / How to test
 - Movement: W/A/S/D (or arrow keys)
 - Interact: E (press when near an entity)
-- Mouse: left-click to interact with interactive entities
+- Mouse: left-click to interact with interactive entities and to manipulate the inventory UI
+- Toggle Inventory UI: I (opens a basic grid UI with drag & drop and optional icons)
 - Save: press F5 (if wired in build) — or trigger from the code `PlayState::saveGame("save.json")`
 - Load: press F9 (if wired) — or call `PlayState::loadGame("save.json")`
 
 What to try
 - Move the player around the tilemap and verify collision.
 - Approach an item on the ground and press E or click it to pick it up.
+- Open the inventory (I) — the project includes a basic grid UI supporting drag & drop and optional item icons.
 - Plant/harvest crop tiles (crop entity is implemented; see spawn code in `PlayState`).
 - Start dialog with NPCs (approach and press E).
 - Observe the quest progress when picking up quest items (collect‑item example).
@@ -98,10 +110,11 @@ What to try
 - src/world/
   - TileMap.h / TileMap.cpp — tile layout and collision checks
 - src/systems/
-  - Inventory.h / Inventory.cpp — inventory logic (no UI)
+  - Inventory.h / Inventory.cpp — inventory logic + helpers
   - Dialog.h / Dialog.cpp — dialog manager + overlay
   - Quest.h / Quest.cpp — quest system (collect item sample)
   - SaveGame.h / SaveGame.cpp — save/load helper (JSON)
+- src/ui/InventoryUI.* — basic inventory UI (grid, drag/drop, icon support)
 - assets/ — sprites, fonts and other runtime resources copied into build
 
 ---
@@ -111,14 +124,14 @@ What to try
 - State pattern: `State` subclasses (e.g., `PlayState`) implement `handleEvent`, `update`, and `draw`.
 - Entities: polymorphic objects derived from `Entity` with `update()` and `draw()` hooks.
 - Input: `InputManager` polls keyboard and mouse once per frame (helps decouple input handling from SFML event internals).
-- Resources: `ResourceManager` caches textures and fonts and returns references for lifetime management.
+- Resources: `ResourceManager` caches textures and fonts and returns references for lifetime management. When a texture file is missing the manager logs diagnostics and returns an empty texture object rather than crashing; fonts use SFML's `openFromFile` and will throw if the font cannot be loaded.
 - Save/Load: `SaveGame` uses nlohmann::json. The current implementation serializes player position and simple inventory info; inventory deserialization is minimal and should be extended.
 - SFML 3 differences: code has been adapted to SFML 3.x API changes (VideoMode, Font loading, event handling). If you use SFML 2.x, expect compile changes.
 
 ---
 
 ## TODO / Known limitations
-- Inventory UI: the inventory system exists in code but lacks an on-screen UI for management; implement a simple grid and toggle with a key (e.g., I).
+- Inventory UI: basic grid UI with drag & drop and optional icon support implemented. Needs polish (better visuals, tooltips, keyboard navigation and advanced move shortcuts).
 - Inventory persistence: saving currently stores minimal item info. Implement an Item registry/factory to reconstruct Item instances during load.
 - QuestManager ownership: the code exposes a small global accessor for quests; consider moving QuestManager into `Game` and providing a proper API to states.
 - Animated sprites: `AnimatedSprite` exists but player/NPC spritesheets and animations need wiring.
@@ -128,8 +141,9 @@ What to try
 ---
 
 ## Extending the project (tips)
+
 - Add an `ItemRegistry` to map item IDs → Item factory functions for save/load.
-- Implement an `InventoryUI` class that subscribes to the `Player` inventory and draws items, supports drag/drop and stacking.
+- Implement additional InventoryUI polish: icons atlas, hover tooltips, stack splitting, quick-move (shift/ctrl), and controller support.
 - Replace the ad-hoc tilemap with Tiled (.tmx) loader for richer maps.
 - Add audio events: SFML Audio wrappers are simple to integrate with a `SoundManager`.
 
@@ -161,7 +175,7 @@ window.draw(sprite);
 ```
 
 Notes:
-- `ResourceManager::texture()` will throw or assert if the file is missing; make sure the path is correct relative to the project root. When running from the build directory the copied `assets/` folder is used, so the same `assets/...` path works.
+- `ResourceManager::texture()` will log helpful diagnostics if the file is missing and return an (empty) texture object as a fallback. Make sure the path is correct relative to the project root or the copied `assets/` folder in the build directory.
 - The manager caches loaded textures by path, so calling `texture()` repeatedly with the same path returns the same `sf::Texture&` without reloading from disk.
 
 Using textures for tilemaps
@@ -192,3 +206,20 @@ If you'd like, I can add a small example entity that loads a texture and draws a
 MIT — see LICENSE file.
 
 If you want, I can also add a short contributing guide, a roadmap, or create an example save file and a small test map. Let me know which you prefer next.
+
+## Offene Features (Roadmap / To‑do)
+
+Diese Liste enthält offene Features und den aktuellen Status; ich arbeite die Punkte in der angegebenen Reihenfolge ab.
+
+1. ✅ Robuste Inventory-UI — basic grid UI implemented (drag & drop, icon support); needs visual polish and keyboard shortcuts
+2. ✅ Anpflanzen von Crops mit Samen — basic crop growth & harvest implemented
+3. ⬜ Eisenbahnsystem mit baubaren Schienen — pending (partial rail entities/spawned placeholders)
+4. ⬜ Feindliche NPCs, welche attackieren — partial implemented (HostileNPC prototype that chases and 'attacks')
+5. ⬜ Abwehrwaffe gegen NPCs — pending
+
+Arbeitsablauf
+- Du führst `cmake --build .` aus und sendest mir die vollständige erfolgreiche Build-Ausgabe, oder ich wille die Änderungen lokal bauen wenn du es erlaubst.
+- Ich arbeite die Liste in der angegebenen Reihenfolge ab. Für jedes Feature erstelle ich einen kurzen Testplan (in `TESTME.md`), implementiere die notwendigen Dateien/Änderungen und fasse die fertigen Änderungen zusammen.
+- Nach Abschluss aller angeforderten Punkte schlage ich zusätzliche Entwicklungs‑/Polish‑Ideen vor und kann diese in die Liste aufnehmen.
+
+Wenn du bereit bist, sende die erfolgreiche Build-Ausgabe und ich beginne mit Punkt 3 oder ich implementiere Punkt 3 direkt if you prefer.

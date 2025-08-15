@@ -17,8 +17,8 @@ Player::Player(InputManager& inputMgr, ResourceManager& resources)
 : sprite(resources.texture("assets/textures/entities/player_idle.png"))
 , speed(200.f), input(inputMgr), inv(32)
 {
-    // scale sprite to a sensible pixel size (approx 24px width), but clamp scales to avoid huge textures
-    const float targetPixelWidth = 24.f;
+    // scale sprite to a sensible pixel size (approx 36px width), but clamp scales to avoid huge textures
+    const float targetPixelWidth = 36.f; // increased for slightly larger player
     const float maxScale = 4.f;    // don't upscale more than this
     const float minScale = 0.01f;  // don't shrink below this
     auto bounds = sprite.getLocalBounds();

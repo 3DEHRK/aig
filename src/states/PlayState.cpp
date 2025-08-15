@@ -5,6 +5,8 @@
 #include "../entities/NPC.h"
 #include "../entities/ItemEntity.h"
 #include "../entities/Crop.h"
+#include "../entities/Rail.h"
+#include "../entities/HostileNPC.h"
 #include "../input/InputManager.h"
 #include <SFML/Window/Mouse.hpp>
 #include <iostream>
@@ -13,6 +15,7 @@
 #include "../systems/SaveGame.h"
 #include <nlohmann/json.hpp>
 #include <fstream>
+#include "../items/Item.h"
 
 // rect center for current SFML (uses position/size members)
 static sf::Vector2f rect_center(const sf::FloatRect& r) {
@@ -39,6 +42,11 @@ PlayState::PlayState(Game& g)
     }
 
     player = std::make_unique<Player>(game.input(), game.resources());
+    // give the player some sample seeds for testing
+    player->inventory().addItem(std::make_shared<Item>("seed_wheat", "Wheat Seed", "Plantable wheat seed", 5, "assets/textures/items/seed_wheat.png"));
+
+    // now that player exists, create inventoryUI with player's inventory reference
+    inventoryUI = std::make_unique<InventoryUI>(game.resources(), player->inventory());
     entities.push_back(std::make_unique<NPC>(game.resources(), sf::Vector2f(700.f, 380.f)));
     auto sample = std::make_shared<Item>("apple_01", "Apple", "A juicy apple", 1);
     entities.push_back(std::make_unique<ItemEntity>(sample, sf::Vector2f(600.f, 380.f)));
@@ -46,6 +54,14 @@ PlayState::PlayState(Game& g)
     // spawn crops
     entities.push_back(std::make_unique<Crop>(game.resources(), sf::Vector2f(300.f, 300.f), "wheat", 3, 5.f));
     entities.push_back(std::make_unique<Crop>(game.resources(), sf::Vector2f(340.f, 300.f), "wheat", 3, 7.f));
+
+    // add sample rail pieces in a small area
+    entities.push_back(std::make_unique<Rail>(game.resources(), sf::Vector2f(200.f, 200.f)));
+    entities.push_back(std::make_unique<Rail>(game.resources(), sf::Vector2f(232.f, 200.f)));
+    entities.push_back(std::make_unique<Rail>(game.resources(), sf::Vector2f(264.f, 200.f)));
+
+    // spawn a hostile NPC targeting the player
+    entities.push_back(std::make_unique<HostileNPC>(game.resources(), sf::Vector2f(400.f, 300.f), player.get()));
 }
 
 void PlayState::handleEvent(const sf::Event& /*ev*/) {
@@ -92,6 +108,9 @@ void PlayState::update(sf::Time dt) {
         return;
     }
 
+    // toggle inventory UI
+    if (game.input().wasKeyPressed(sf::Keyboard::Key::I)) inventoryUI->toggle();
+
     // process input into player (sets vel & flags)
     player->update(dt);
 
@@ -123,6 +142,7 @@ void PlayState::update(sf::Time dt) {
         const float interactDist = 48.f; // tuneable
         const float interactDistSq = interactDist * interactDist;
 
+        bool didInteract = false;
         for (size_t i = 0; i < entities.size(); ++i) {
             auto &e = entities[i];
             sf::FloatRect eb = e->getBounds();
@@ -134,9 +154,53 @@ void PlayState::update(sf::Time dt) {
             if (distSq <= interactDistSq) {
                 if (auto npc = dynamic_cast<NPC*>(e.get())) {
                     dialog.start({ "You pressed E.", "This NPC responds to proximity." });
+                    didInteract = true;
                 } else {
                     player->interact(e.get());
                     e->interact(player.get());
+                    didInteract = true;
+                }
+            }
+        }
+
+        // if nothing interacted, try planting seeds on nearby soil
+        if (!didInteract) {
+            // find a seed in inventory
+            std::string foundSeedId;
+            for (auto &it : player->inventory().items()) {
+                if (it && it->id.rfind("seed_", 0) == 0) {
+                    foundSeedId = it->id;
+                    break;
+                }
+            }
+            if (!foundSeedId.empty()) {
+                // find a nearby plantable tile (within interactDist)
+                unsigned ts = map.tileSize();
+                int px = static_cast<int>(std::floor(ppos.x)) / static_cast<int>(ts);
+                int py = static_cast<int>(std::floor(ppos.y)) / static_cast<int>(ts);
+                bool planted = false;
+                for (int oy=-1; oy<=1 && !planted; ++oy) {
+                    for (int ox=-1; ox<=1 && !planted; ++ox) {
+                        int tx = px + ox;
+                        int ty = py + oy;
+                        if (tx < 0 || ty < 0 || static_cast<unsigned>(tx) >= map.width() || static_cast<unsigned>(ty) >= map.height()) continue;
+                        sf::Vector2f center((float)tx * (float)ts + ts * 0.5f, (float)ty * (float)ts + ts * 0.5f);
+                        float dx = center.x - ppos.x;
+                        float dy = center.y - ppos.y;
+                        if (dx*dx + dy*dy > interactDistSq) continue;
+                        if (map.isTilePlantable((unsigned)tx, (unsigned)ty)) {
+                            // consume one seed and spawn crop
+                            if (player->inventory().removeItemById(foundSeedId, 1)) {
+                                // seed id has form seed_<cropid>
+                                std::string cropId = foundSeedId.substr(std::string("seed_").size());
+                                entities.push_back(std::make_unique<Crop>(game.resources(), center, cropId, 3, 6.f));
+                                planted = true;
+                                std::cerr << "Planted seed " << foundSeedId << " at tile " << tx << "," << ty << "\n";
+                                // mark tile as non-plantable (set to Empty) to avoid replanting same spot
+                                map.setTile((unsigned)tx, (unsigned)ty, TileMap::Empty);
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -175,6 +239,9 @@ void PlayState::draw() {
 
     // draw dialog UI on top
     dialog.draw(win);
+
+    // draw inventory UI last
+    if (inventoryUI) inventoryUI->draw(win);
 }
 
 void PlayState::saveGame(const std::string& path) {

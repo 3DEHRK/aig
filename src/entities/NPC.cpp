@@ -20,8 +20,8 @@ NPC::NPC(ResourceManager& resources, const sf::Vector2f& pos) {
         auto bounds = sprite->getLocalBounds();
         auto sz = rect_size_local(bounds);
         std::cerr << "NPC texture size: " << sz.x << " x " << sz.y << "\n";
-        // clamp scale to reasonable size (approx 24px width)
-        const float targetPixelWidth = 24.f;
+        // clamp scale to reasonable size (approx 36px width)
+        const float targetPixelWidth = 36.f; // increased for slightly larger NPCs
         const float maxScale = 4.f;
         const float minScale = 0.01f;
         if (sz.x > 0 && sz.y > 0) {

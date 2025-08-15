@@ -19,6 +19,11 @@ void TileMap::generateTestMap() {
     }
     for (unsigned x = 10; x < 15; ++x) tiles[x + 8*w] = 1;
     for (unsigned y = 12; y < 18; ++y) tiles[20 + y*w] = 1;
+
+    // add some soil tiles for planting demo
+    for (unsigned x = 5; x < 9; ++x) {
+        tiles[x + 10*w] = TileMap::Soil;
+    }
 }
 
 void TileMap::draw(sf::RenderWindow& window) {
@@ -27,7 +32,9 @@ void TileMap::draw(sf::RenderWindow& window) {
     for (unsigned y = 0; y < h; ++y) {
         for (unsigned x = 0; x < w; ++x) {
             uint8_t t = tiles[x + y*w];
-            r.setFillColor(t == 0 ? sf::Color(120,170,140) : sf::Color(60,60,60));
+            if (t == TileMap::Empty) r.setFillColor(sf::Color(120,170,140));
+            else if (t == TileMap::Solid) r.setFillColor(sf::Color(60,60,60));
+            else if (t == TileMap::Soil) r.setFillColor(sf::Color(100,140,90));
             r.setPosition(sf::Vector2f{float(x*ts), float(y*ts)});
             window.draw(r);
         }
@@ -155,3 +162,8 @@ bool TileMap::isRectColliding(const sf::FloatRect& rect) const {
     }
     return false;
 }
+
+uint8_t TileMap::getTile(unsigned tx, unsigned ty) const { return (tx < w && ty < h) ? tiles[tx + ty*w] : TileMap::Solid; }
+void TileMap::setTile(unsigned tx, unsigned ty, uint8_t type) { if (tx < w && ty < h) tiles[tx + ty*w] = type; }
+bool TileMap::isTilePlantable(unsigned tx, unsigned ty) const { return getTile(tx, ty) == TileMap::Soil; }
+bool TileMap::isWorldPosPlantable(const sf::Vector2f& worldPos) const { unsigned tx = static_cast<unsigned>(std::floor(worldPos.x)) / ts; unsigned ty = static_cast<unsigned>(std::floor(worldPos.y)) / ts; if (tx >= w || ty >= h) return false; return isTilePlantable(tx, ty); }

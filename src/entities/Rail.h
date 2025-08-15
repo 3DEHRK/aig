@@ -1,19 +1,18 @@
 #pragma once
 #include "Entity.h"
-#include <SFML/Graphics.hpp>
 #include <memory>
 
 class ResourceManager;
 
-class NPC : public Entity {
+class Rail : public Entity {
 public:
-    NPC(ResourceManager& resources, const sf::Vector2f& pos);
+    Rail(ResourceManager& resources, const sf::Vector2f& pos);
     void update(sf::Time) override;
     void draw(sf::RenderWindow& window) override;
     sf::FloatRect getBounds() const override;
     void interact(Entity* by) override;
-protected:
-    sf::RectangleShape shape;
-    std::unique_ptr<sf::Sprite> sprite;
+private:
     bool useSprite = false;
+    std::unique_ptr<sf::Sprite> sprite;
+    sf::RectangleShape shape;
 };

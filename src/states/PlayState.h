@@ -9,6 +9,7 @@
 #include "../entities/Player.h"
 #include "../world/TileMap.h"
 #include "../systems/Dialog.h"
+#include "../ui/InventoryUI.h"
 
 class Game;
 
@@ -34,4 +35,7 @@ private:
 
     // dialog system
     DialogManager dialog;
+
+    // UI
+    std::unique_ptr<InventoryUI> inventoryUI;
 };
