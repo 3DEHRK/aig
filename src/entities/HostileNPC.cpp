@@ -1,6 +1,7 @@
 #include "HostileNPC.h"
 #include "../resources/ResourceManager.h"
 #include "Player.h"
+#include "../world/TileMap.h"
 #include <cmath>
 #include <iostream>
 
@@ -23,9 +24,22 @@ void HostileNPC::update(sf::Time dt) {
     if (dist > attackRange) {
         float nx = dx / dist; float ny = dy / dist;
         sf::Vector2f move(nx * speed * ds, ny * speed * ds);
-        // apply movement by moving underlying NPC sprite/shape
-        if (sprite) sprite->move(move);
-        else shape.move(move);
+        // collision-aware move using tileMap if available
+        if (tileMap) {
+            // attempt X move
+            sf::FloatRect trialX(sf::Vector2f(center.x + move.x - b.size.x*0.5f, center.y - b.size.y*0.5f), sf::Vector2f(b.size.x, b.size.y));
+            if (!tileMap->isRectColliding(trialX)) {
+                if (sprite) sprite->move(sf::Vector2f(move.x, 0.f)); else shape.move(sf::Vector2f(move.x, 0.f));
+            }
+            // attempt Y move
+            sf::FloatRect trialY(sf::Vector2f(center.x - b.size.x*0.5f, center.y + move.y - b.size.y*0.5f), sf::Vector2f(b.size.x, b.size.y));
+            if (!tileMap->isRectColliding(trialY)) {
+                if (sprite) sprite->move(sf::Vector2f(0.f, move.y)); else shape.move(sf::Vector2f(0.f, move.y));
+            }
+        } else {
+            if (sprite) sprite->move(move);
+            else shape.move(move);
+        }
     } else {
         // in range: attack if cooldown elapsed
         attackTimer -= ds;

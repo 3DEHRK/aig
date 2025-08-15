@@ -62,6 +62,11 @@ PlayState::PlayState(Game& g)
 
     // spawn a hostile NPC targeting the player
     entities.push_back(std::make_unique<HostileNPC>(game.resources(), sf::Vector2f(400.f, 300.f), player.get()));
+
+    // ensure NPCs get a pointer to the world TileMap for simple collision checks
+    for (auto &e : entities) {
+        if (auto npc = dynamic_cast<NPC*>(e.get())) npc->setTileMap(&map);
+    }
 }
 
 void PlayState::handleEvent(const sf::Event& /*ev*/) {
