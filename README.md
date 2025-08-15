@@ -216,7 +216,14 @@ Diese Liste enthält offene Features und den aktuellen Status; ich arbeite die P
 3. ⬜ Eisenbahnsystem mit baubaren Schienen — pending (partial rail entities/spawned placeholders)
 4. ⬜ Feindliche NPCs, welche attackieren — partial implemented (HostileNPC prototype that chases and 'attacks')
 5. ⬜ Abwehrwaffe gegen NPCs — pending
-6. reitterate over all features improving usability, quality, add detail
+6. work on bug list below
+7. add ingame message system for player infos and logging
+8. reitterate over all features improving usability, quality, add detail
+
+buglist
+  - npc has no collision / movement restriction
+  - dialog box is relative to npc ingame location not absolute on user screen
+  - inventory has no gui / gui not visible
 
 Arbeitsablauf
 - Du führst `cmake --build .` aus und sendest mir die vollständige erfolgreiche Build-Ausgabe, oder ich wille die Änderungen lokal bauen wenn du es erlaubst.
