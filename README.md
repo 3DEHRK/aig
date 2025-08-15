@@ -216,6 +216,7 @@ Diese Liste enthält offene Features und den aktuellen Status; ich arbeite die P
 3. ⬜ Eisenbahnsystem mit baubaren Schienen — pending (partial rail entities/spawned placeholders)
 4. ⬜ Feindliche NPCs, welche attackieren — partial implemented (HostileNPC prototype that chases and 'attacks')
 5. ⬜ Abwehrwaffe gegen NPCs — pending
+6. reitterate over all features improving usability, quality, add detail
 
 Arbeitsablauf
 - Du führst `cmake --build .` aus und sendest mir die vollständige erfolgreiche Build-Ausgabe, oder ich wille die Änderungen lokal bauen wenn du es erlaubst.
