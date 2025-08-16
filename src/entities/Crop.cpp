@@ -31,15 +31,21 @@ Crop::Crop(ResourceManager& resources, const sf::Vector2f& pos, const std::strin
         // scale crops to 1/7 of original size
         const float cropScale = 1.0f / 7.0f;
         sprite->setScale(sf::Vector2f(cropScale, cropScale));
-        sprite->setPosition(pos);
+        // set origin before positioning so centering works predictably
         auto loc = sprite->getLocalBounds();
         auto sz = rect_size_local(loc);
         sprite->setOrigin(sf::Vector2f(sz.x/2.f, sz.y/2.f));
+        sprite->setPosition(pos);
         useSprite = true;
+        std::cerr << "Crop created with " << stageTextures.size() << " stage textures\n";
     } else {
         shape.setSize({24.f, 24.f});
         shape.setOrigin(shape.getSize() / 2.f);
         shape.setPosition(pos);
+        // ensure fallback shape is visible immediately
+        shape.setFillColor(sf::Color(200, 160, 60));
+        shape.setOutlineColor(sf::Color::Black);
+        shape.setOutlineThickness(1.f);
         useSprite = false;
     }
 
@@ -61,13 +67,15 @@ void Crop::update(sf::Time dt) {
             // update sprite texture pointer if available
             int idx = std::min(stage, (int)stageTextures.size() - 1);
             if (idx >= 0 && idx < (int)stageTextures.size() && stageTextures[idx]) {
+                // preserve current position while changing texture/origin
+                sf::Vector2f curPos = sprite->getPosition();
                 sprite->setTexture(*stageTextures[idx]);
-                // re-apply crop scale and re-center origin
                 const float cropScale = 1.0f / 7.0f;
                 sprite->setScale(sf::Vector2f(cropScale, cropScale));
                 auto loc = sprite->getLocalBounds();
                 auto sz = rect_size_local(loc);
                 sprite->setOrigin(sf::Vector2f(sz.x/2.f, sz.y/2.f));
+                sprite->setPosition(curPos);
             }
         }
     }

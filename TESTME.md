@@ -14,6 +14,8 @@ Hinweis: Vor jedem Test muss ein erfolgreicher Build vorhanden sein ("cmake --bu
   4. Teste Drag & Drop: Linksklick auf ein Item, klicke auf eine andere Zelle, das Item sollte bewegt/vertauscht werden.
 - Erwartetes Ergebnis: Items erscheinen im UI, Drag & Drop funktioniert, Stapelgrößen werden angezeigt.
 
+STATUS: OK (funktional; Positionierung relativ zum Spieler)
+
 2) Anpflanzen von Crops mit Samen (IMPLEMENTIERT)
 - Voraussetzung: Crops-Assets vorhanden (assets/textures/entities/crop1.png ...). Player startet mit ein paar "seed_wheat" in Inventory.
 - Schritte:
@@ -23,12 +25,18 @@ Hinweis: Vor jedem Test muss ein erfolgreicher Build vorhanden sein ("cmake --bu
   4. Interagiere (E) an einer reifen Crop und prüfe, ob die Ernte ins Inventory geht.
 - Erwartetes Ergebnis: Seed wird verbraucht, Crop erscheint auf Soil, Stages wechseln und Ernte landet im Inventar.
 
-3) Eisenbahnsystem (Teil-IMPLEMENTIERT)
-- Voraussetzung: Rail-Textur optional (assets/textures/tiles/rail.png). Einige Rail-Entitäten sind in PlayState gespawnt.
+STATUS: OK - Planting and crop rendering confirmed (console shows planting logs and crop creation)
+
+3) Eisenbahnsystem (IMPLEMENTIERT - grundlegendes Bauwerkzeug)
+- Voraussetzung: Rail-Textur optional (assets/textures/tiles/rail.png). Rail-Tool kann mit Taste 'B' umgeschaltet werden.
 - Schritte:
-  1. Starte das Spiel und schaue bei (200,200) nach Rail-Sprites/Platzhaltern.
-  2. Prüfe: Rail-Entities sind sichtbar als dünne Balken oder Rail-Sprites.
-- Erwartetes Ergebnis: Rail-Entities rendern; volle Bausystem-Logik noch ausstehend.
+  1. Starte das Spiel und drücke 'B' um den Rail-Bau-Modus zu aktivieren.
+  2. Bewege die Maus über Kacheln, eine Vorschau zeigt die aktuelle Kachel an.
+  3. Linksklick platziert eine Schiene auf der angezeigten Kachel; ein weiterer Klick entfernt sie.
+  4. Beobachte: Die TileMap wird aktualisiert und Rail-Entities werden im Spiel sichtbar.
+- Erwartetes Ergebnis: Du kannst Schienen platzieren und entfernen. Persistenz (Save/Load) der Schienen ist noch nicht implementiert.
+
+STATUS: OK - texture scaling slightly small but functional
 
 4) Feindliche NPCs, die attackieren (Teil-IMPLEMENTIERT)
 - Voraussetzung: HostileNPC ist in PlayState gespawnt.

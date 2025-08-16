@@ -10,6 +10,7 @@
 #include "../world/TileMap.h"
 #include "../systems/Dialog.h"
 #include "../ui/InventoryUI.h"
+#include "../tools/RailTool.h"
 
 class Game;
 
@@ -38,4 +39,16 @@ private:
 
     // UI
     std::unique_ptr<InventoryUI> inventoryUI;
+
+    // tools
+    std::unique_ptr<RailTool> railTool;
+
+    // synchronize Rail entities with TileMap state
+    void syncRailsWithMap();
+
+    // world projectiles
+    std::vector<std::unique_ptr<Entity>> worldProjectiles;
+
+    // spawn a projectile in the world (added by player or NPCs)
+    void spawnProjectile(std::unique_ptr<Entity> p);
 };

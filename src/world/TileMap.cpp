@@ -2,46 +2,49 @@
 #include <algorithm>
 #include <cmath>
 #include <type_traits>
+#include <iostream>
 
 TileMap::TileMap(unsigned width, unsigned height, unsigned tileSize)
-: w(width), h(height), ts(tileSize), tiles(w*h, 0)
-{}
+: w(width), h(height), ts(tileSize), tiles(w*h, TileMap::Empty) {}
 
 void TileMap::generateTestMap() {
-    std::fill(tiles.begin(), tiles.end(), 0);
+    // create borders
     for (unsigned x = 0; x < w; ++x) {
-        tiles[x + 0 * w] = 1;
-        tiles[x + (h-1) * w] = 1;
+        setTile(x, 0, TileMap::Solid);
+        setTile(x, h-1, TileMap::Solid);
     }
     for (unsigned y = 0; y < h; ++y) {
-        tiles[0 + y * w] = 1;
-        tiles[(w-1) + y * w] = 1;
-    }
-    for (unsigned x = 10; x < 15; ++x) tiles[x + 8*w] = 1;
-    for (unsigned y = 12; y < 18; ++y) tiles[20 + y*w] = 1;
-
-    // add some soil tiles for planting demo
-    for (unsigned x = 5; x < 9; ++x) {
-        tiles[x + 10*w] = TileMap::Soil;
+        setTile(0, y, TileMap::Solid);
+        setTile(w-1, y, TileMap::Solid);
     }
 
-    // add a short rail line
-    for (unsigned x = 6; x < 10; ++x) {
-        tiles[x + 6*w] = TileMap::Rail;
+    // create a patch of soil in the upper left
+    for (unsigned y = 5; y < 9; ++y) {
+        for (unsigned x = 4; x < 10; ++x) {
+            setTile(x, y, TileMap::Soil);
+        }
+    }
+
+    // create a small rail line
+    unsigned rx = 6, ry = 18;
+    for (unsigned i = 0; i < 6; ++i) {
+        setTile(rx + i, ry, TileMap::Rail);
     }
 }
 
 void TileMap::draw(sf::RenderWindow& window) {
-    sf::RectangleShape r;
-    r.setSize({float(ts), float(ts)});
+    // naive draw: draw colored rects for tiles
     for (unsigned y = 0; y < h; ++y) {
         for (unsigned x = 0; x < w; ++x) {
-            uint8_t t = tiles[x + y*w];
-            if (t == TileMap::Empty) r.setFillColor(sf::Color(120,170,140));
-            else if (t == TileMap::Solid) r.setFillColor(sf::Color(60,60,60));
-            else if (t == TileMap::Soil) r.setFillColor(sf::Color(100,140,90));
-            else if (t == TileMap::Rail) r.setFillColor(sf::Color(200,200,200));
-            r.setPosition(sf::Vector2f{float(x*ts), float(y*ts)});
+            uint8_t t = getTile(x, y);
+            sf::RectangleShape r(sf::Vector2f((float)ts, (float)ts));
+            r.setPosition(sf::Vector2f((float)x * ts, (float)y * ts));
+            switch (t) {
+                case TileMap::Solid: r.setFillColor(sf::Color(120, 120, 120)); break;
+                case TileMap::Soil: r.setFillColor(sf::Color(160, 110, 60)); break;
+                case TileMap::Rail: r.setFillColor(sf::Color(100, 100, 100)); break;
+                default: r.setFillColor(sf::Color(80, 200, 120)); break;
+            }
             window.draw(r);
         }
     }
@@ -146,32 +149,83 @@ static bool rectsIntersect(const sf::FloatRect& a, const sf::FloatRect& b) {
 
 bool TileMap::isTileSolid(unsigned tx, unsigned ty) const {
     if (tx >= w || ty >= h) return true;
-    return tiles[tx + ty*w] != 0;
+    uint8_t t = tiles[ty * w + tx];
+    return t == TileMap::Solid;
 }
 
 bool TileMap::isWorldPosSolid(const sf::Vector2f& worldPos) const {
-    if (worldPos.x < 0 || worldPos.y < 0) return true;
-    unsigned tx = static_cast<unsigned>(std::floor(worldPos.x)) / ts;
-    unsigned ty = static_cast<unsigned>(std::floor(worldPos.y)) / ts;
-    if (tx >= w || ty >= h) return true;
-    return isTileSolid(tx, ty);
+    int tx = static_cast<int>(std::floor(worldPos.x)) / static_cast<int>(ts);
+    int ty = static_cast<int>(std::floor(worldPos.y)) / static_cast<int>(ts);
+    if (tx < 0 || ty < 0 || static_cast<unsigned>(tx) >= w || static_cast<unsigned>(ty) >= h) return true;
+    return isTileSolid((unsigned)tx, (unsigned)ty);
 }
 
 bool TileMap::isRectColliding(const sf::FloatRect& rect) const {
-    for (unsigned ty = 0; ty < h; ++ty) {
-        for (unsigned tx = 0; tx < w; ++tx) {
-            if (!isTileSolid(tx, ty)) continue;
-            sf::FloatRect tileRect(sf::Vector2f{float(tx * ts), float(ty * ts)},
-                                   sf::Vector2f{float(ts), float(ts)});
-            if (rectsIntersect(tileRect, rect)) return true;
+    int x0 = static_cast<int>(std::floor(rect.position.x)) / static_cast<int>(ts);
+    int y0 = static_cast<int>(std::floor(rect.position.y)) / static_cast<int>(ts);
+    int x1 = static_cast<int>(std::floor(rect.position.x + rect.size.x - 1)) / static_cast<int>(ts);
+    int y1 = static_cast<int>(std::floor(rect.position.y + rect.size.y - 1)) / static_cast<int>(ts);
+    for (int y = y0; y <= y1; ++y) {
+        for (int x = x0; x <= x1; ++x) {
+            if (x < 0 || y < 0 || static_cast<unsigned>(x) >= w || static_cast<unsigned>(y) >= h) return true;
+            if (isTileSolid((unsigned)x, (unsigned)y)) return true;
         }
     }
     return false;
 }
 
-uint8_t TileMap::getTile(unsigned tx, unsigned ty) const { return (tx < w && ty < h) ? tiles[tx + ty*w] : TileMap::Solid; }
-void TileMap::setTile(unsigned tx, unsigned ty, uint8_t type) { if (tx < w && ty < h) tiles[tx + ty*w] = type; }
-bool TileMap::isTilePlantable(unsigned tx, unsigned ty) const { return getTile(tx, ty) == TileMap::Soil; }
-bool TileMap::isWorldPosPlantable(const sf::Vector2f& worldPos) const { unsigned tx = static_cast<unsigned>(std::floor(worldPos.x)) / ts; unsigned ty = static_cast<unsigned>(std::floor(worldPos.y)) / ts; if (tx >= w || ty >= h) return false; return isTilePlantable(tx, ty); }
-bool TileMap::isTileRail(unsigned tx, unsigned ty) const { return getTile(tx, ty) == TileMap::Rail; }
-bool TileMap::isWorldPosRail(const sf::Vector2f& worldPos) const { unsigned tx = static_cast<unsigned>(std::floor(worldPos.x)) / ts; unsigned ty = static_cast<unsigned>(std::floor(worldPos.y)) / ts; if (tx >= w || ty >= h) return false; return isTileRail(tx, ty); }
+uint8_t TileMap::getTile(unsigned tx, unsigned ty) const {
+    if (tx >= w || ty >= h) return TileMap::Solid;
+    return tiles[ty * w + tx];
+}
+
+void TileMap::setTile(unsigned tx, unsigned ty, uint8_t type) {
+    if (tx >= w || ty >= h) return;
+    tiles[ty * w + tx] = type;
+}
+
+bool TileMap::isTilePlantable(unsigned tx, unsigned ty) const {
+    if (tx >= w || ty >= h) return false;
+    return getTile(tx, ty) == TileMap::Soil;
+}
+
+bool TileMap::isWorldPosPlantable(const sf::Vector2f& worldPos) const {
+    int tx = static_cast<int>(std::floor(worldPos.x)) / static_cast<int>(ts);
+    int ty = static_cast<int>(std::floor(worldPos.y)) / static_cast<int>(ts);
+    if (tx < 0 || ty < 0 || static_cast<unsigned>(tx) >= w || static_cast<unsigned>(ty) >= h) return false;
+    return isTilePlantable((unsigned)tx, (unsigned)ty);
+}
+
+bool TileMap::isTileRail(unsigned tx, unsigned ty) const {
+    if (tx >= w || ty >= h) return false;
+    return getTile(tx, ty) == TileMap::Rail;
+}
+
+bool TileMap::isWorldPosRail(const sf::Vector2f& worldPos) const {
+    int tx = static_cast<int>(std::floor(worldPos.x)) / static_cast<int>(ts);
+    int ty = static_cast<int>(std::floor(worldPos.y)) / static_cast<int>(ts);
+    if (tx < 0 || ty < 0 || static_cast<unsigned>(tx) >= w || static_cast<unsigned>(ty) >= h) return false;
+    return isTileRail((unsigned)tx, (unsigned)ty);
+}
+
+nlohmann::json TileMap::toJson() const {
+    nlohmann::json j;
+    j["width"] = w;
+    j["height"] = h;
+    j["tileSize"] = ts;
+    j["tiles"] = nlohmann::json::array();
+    for (auto v : tiles) j["tiles"].push_back(v);
+    return j;
+}
+
+void TileMap::fromJson(const nlohmann::json& j) {
+    if (!j.contains("width") || !j.contains("height") || !j.contains("tiles")) return;
+    unsigned nw = j["width"].get<unsigned>();
+    unsigned nh = j["height"].get<unsigned>();
+    auto arr = j["tiles"];
+    if (!arr.is_array()) return;
+    if (arr.size() != nw * nh) return;
+    w = nw; h = nh;
+    tiles.clear(); tiles.resize(w*h);
+    for (size_t i = 0; i < arr.size(); ++i) tiles[i] = (uint8_t)arr[i].get<int>();
+}

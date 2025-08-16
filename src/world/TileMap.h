@@ -1,6 +1,7 @@
 #pragma once
 #include <vector>
 #include <SFML/Graphics.hpp>
+#include <nlohmann/json.hpp>
 
 class TileMap {
 public:
@@ -26,6 +27,10 @@ public:
     bool isWorldPosPlantable(const sf::Vector2f& worldPos) const;
     bool isTileRail(unsigned tx, unsigned ty) const;
     bool isWorldPosRail(const sf::Vector2f& worldPos) const;
+
+    // serialization helpers (JSON)
+    nlohmann::json toJson() const;
+    void fromJson(const nlohmann::json& j);
 
 private:
     unsigned w, h, ts;

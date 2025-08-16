@@ -26,6 +26,12 @@ public:
     sf::Vector2f size() const;
 
     Inventory& inventory(); // access player's inventory
+
+    // projectiles fired by player
+    std::vector<std::unique_ptr<Entity>> projectiles;
+
+    // fire a projectile in a direction (normalized)
+    void fireProjectile(const sf::Vector2f& dir);
 private:
     sf::Sprite sprite;
     float speed;

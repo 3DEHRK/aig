@@ -1,6 +1,8 @@
-# SFML Game Framework
+🎉✨🎮🌾🚂🧩🌟💫🛠️🎨🔥🌈🙂😍🤝👏🎵🍀
 
-🌾🎮🚂🧩✨  A tiny playground for pixel games — built with C++ & SFML — you deserve some beauty!
+🌟🌟🌟  Welcome to the SFML Game Framework  🌟🌟🌟
+
+🚀 A tiny playground for pixel games — built with C++ & SFML — you deserve some beauty! 🚀
 
 🎨🌟 ✦ ✧ ✺ ✹ ✶  Let's make code lovely ✶ ✹ ✺ ✧ ✦ 🌟🎨
 
@@ -218,7 +220,7 @@ Diese Liste enthält offene Features und den aktuellen Status; ich arbeite die P
 
 1. ✅ Robuste Inventory-UI — basic grid UI implemented (drag & drop, icon support); needs visual polish and keyboard shortcuts
 2. ✅ Anpflanzen von Crops mit Samen — basic crop growth & harvest implemented
-3. ⬜ Eisenbahnsystem mit baubaren Schienen — pending (partial rail entities/spawned placeholders)
+3. ✅ Eisenbahnsystem mit baubaren Schienen — basic rail build tool implemented (press 'B' to toggle build mode; click to place/remove rails on tiles). Persistence in save/load pending.
 4. ⬜ Feindliche NPCs, welche attackieren — partial implemented (HostileNPC prototype that chases and 'attacks')
 5. ⬜ Abwehrwaffe gegen NPCs — pending
 6. work on bug list below

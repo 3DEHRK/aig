@@ -2,6 +2,7 @@
 #include "../input/InputManager.h"
 #include "../resources/ResourceManager.h"
 #include "ItemEntity.h"
+#include "Projectile.h"
 #include <SFML/Config.hpp>
 
 // helper: get size of FloatRect in a SFML-version-safe way
@@ -45,7 +46,7 @@ void Player::update(sf::Time /*dt*/) {
     if (input.isKeyDown(sf::Keyboard::Key::S)) vel.y += speed;
     if (input.isKeyDown(sf::Keyboard::Key::A)) vel.x -= speed;
     if (input.isKeyDown(sf::Keyboard::Key::D)) vel.x += speed;
-    if (input.wasKeyPressed(sf::Keyboard::Key::E)) interactPressed = true;
+    // NOTE: do not consume the E key here (wasKeyPressed) — PlayState handles interaction presses.
 }
 
 sf::Vector2f Player::computeDesiredMove(sf::Time dt) const {
@@ -76,6 +77,15 @@ void Player::interact(Entity* other) {
     if (auto itemEnt = dynamic_cast<ItemEntity*>(other)) {
         itemEnt->interact(this);
     }
+}
+
+void Player::fireProjectile(const sf::Vector2f& dir) {
+    if (dir.x == 0 && dir.y == 0) return;
+    float len = std::sqrt(dir.x*dir.x + dir.y*dir.y);
+    sf::Vector2f nd = {dir.x/len, dir.y/len};
+    sf::Vector2f pos = sprite.getPosition();
+    sf::Vector2f vel = nd * 300.f; // projectile speed
+    projectiles.push_back(std::make_unique<Projectile>(pos, vel));
 }
 
 bool Player::wantsToInteract() const { return interactPressed; }

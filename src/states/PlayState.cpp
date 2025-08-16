@@ -16,6 +16,8 @@
 #include <nlohmann/json.hpp>
 #include <fstream>
 #include "../items/Item.h"
+#include "../tools/RailTool.h"
+#include "../entities/Projectile.h"
 
 // rect center for current SFML (uses position/size members)
 static sf::Vector2f rect_center(const sf::FloatRect& r) {
@@ -26,6 +28,7 @@ PlayState::PlayState(Game& g)
 : game(g), view(g.getWindow().getDefaultView()), map(50, 30, 32)
 {
     map.generateTestMap();
+
     // try to set a font for dialog (user should place Arial at assets/fonts/arial.ttf)
     try {
         auto &f = game.resources().font("assets/fonts/arial.ttf");
@@ -42,8 +45,15 @@ PlayState::PlayState(Game& g)
     }
 
     player = std::make_unique<Player>(game.input(), game.resources());
-    // give the player some sample seeds for testing
-    player->inventory().addItem(std::make_shared<Item>("seed_wheat", "Wheat Seed", "Plantable wheat seed", 5, "assets/textures/items/seed_wheat.png"));
+    // give the player some sample seeds for testing — start with more seeds for reliable testing
+    for (int i = 0; i < 10; ++i) {
+        player->inventory().addItem(std::make_shared<Item>("seed_wheat", "Wheat Seed", "Plantable wheat seed", 1, "assets/textures/items/seed_wheat.png"));
+    }
+    // position player near the soil patch created by generateTestMap() (tile ~6,6)
+    unsigned ts = map.tileSize();
+    unsigned startTx = 6, startTy = 6;
+    player->setPosition({ startTx * (float)ts + ts * 0.5f, startTy * (float)ts + ts * 0.5f });
+    std::cerr << "Player positioned near soil at tile " << startTx << "," << startTy << " and given 10 seeds\n";
 
     // now that player exists, create inventoryUI with player's inventory reference
     inventoryUI = std::make_unique<InventoryUI>(game.resources(), player->inventory());
@@ -56,9 +66,9 @@ PlayState::PlayState(Game& g)
     entities.push_back(std::make_unique<Crop>(game.resources(), sf::Vector2f(340.f, 300.f), "wheat", 3, 7.f));
 
     // add sample rail pieces in a small area
-    entities.push_back(std::make_unique<Rail>(game.resources(), sf::Vector2f(200.f, 200.f)));
-    entities.push_back(std::make_unique<Rail>(game.resources(), sf::Vector2f(232.f, 200.f)));
-    entities.push_back(std::make_unique<Rail>(game.resources(), sf::Vector2f(264.f, 200.f)));
+    entities.push_back(std::make_unique<Rail>(game.resources(), sf::Vector2f(200.f, 200.f), map.tileSize()));
+    entities.push_back(std::make_unique<Rail>(game.resources(), sf::Vector2f(232.f, 200.f), map.tileSize()));
+    entities.push_back(std::make_unique<Rail>(game.resources(), sf::Vector2f(264.f, 200.f), map.tileSize()));
 
     // spawn a hostile NPC targeting the player
     entities.push_back(std::make_unique<HostileNPC>(game.resources(), sf::Vector2f(400.f, 300.f), player.get()));
@@ -67,6 +77,12 @@ PlayState::PlayState(Game& g)
     for (auto &e : entities) {
         if (auto npc = dynamic_cast<NPC*>(e.get())) npc->setTileMap(&map);
     }
+
+    // initialize rail tool
+    railTool = std::make_unique<RailTool>(game.resources(), map);
+
+    // call syncRailsWithMap() to populate initial rail entities
+    syncRailsWithMap();
 }
 
 void PlayState::handleEvent(const sf::Event& /*ev*/) {
@@ -114,7 +130,21 @@ void PlayState::update(sf::Time dt) {
     }
 
     // toggle inventory UI
-    if (game.input().wasKeyPressed(sf::Keyboard::Key::I)) inventoryUI->toggle();
+    if (game.input().wasKeyPressed(sf::Keyboard::Key::I)) {
+        if (inventoryUI) inventoryUI->toggle();
+        std::cerr << "Inventory UI toggled. open=" << (inventoryUI ? "?" : "no-ui") << "\n";
+    }
+
+    // ensure UI gets per-frame input handling
+    if (inventoryUI) inventoryUI->update(game.input(), game.getWindow(), dt);
+
+    // toggle rail build tool
+    if (game.input().wasKeyPressed(sf::Keyboard::Key::B)) {
+        if (railTool) {
+            railTool->toggle();
+            std::cerr << "Rail tool toggled. enabled=" << (railTool->enabled ? 1 : 0) << "\n";
+        }
+    }
 
     // process input into player (sets vel & flags)
     player->update(dt);
@@ -125,17 +155,68 @@ void PlayState::update(sf::Time dt) {
 
     for (auto& e : entities) e->update(dt);
 
-    // mouse click interaction — point-in-rect
-    if (game.input().wasMousePressed(sf::Mouse::Button::Left)) {
-        sf::Vector2i pixelPos = sf::Mouse::getPosition(game.getWindow());
-        sf::Vector2f worldPos = game.getWindow().mapPixelToCoords(pixelPos, view);
+    // update projectiles
+    for (auto& p : worldProjectiles) p->update(dt);
+
+    // projectile collisions vs hostile NPCs: projectile kills hostile NPCs on impact
+    for (auto& p : worldProjectiles) {
+        auto proj = dynamic_cast<Projectile*>(p.get());
+        if (!proj) continue;
+        sf::FloatRect pb = proj->getBounds();
         for (size_t i = 0; i < entities.size(); ++i) {
-            auto &e = entities[i];
-            if (e->getBounds().contains(worldPos)) {
-                if (auto npc = dynamic_cast<NPC*>(e.get())) {
-                    dialog.start({ "Hello stranger.", "Nice weather today, isn't it?", "Press E or Space to continue." });
-                } else {
-                    e->interact(player.get());
+            if (auto hn = dynamic_cast<HostileNPC*>(entities[i].get())) {
+                sf::FloatRect hb = hn->getBounds();
+                // manual AABB overlap test (using position and size members)
+                bool overlap = !(pb.position.x + pb.size.x <= hb.position.x ||
+                                 hb.position.x + hb.size.x <= pb.position.x ||
+                                 pb.position.y + pb.size.y <= hb.position.y ||
+                                 hb.position.y + hb.size.y <= pb.position.y);
+                if (overlap) {
+                    // destroy the hostile NPC and the projectile
+                    entities.erase(entities.begin() + i);
+                    proj->kill();
+                    break;
+                }
+            }
+        }
+    }
+
+    // remove expired projectiles if they implement expired() via Projectile
+    worldProjectiles.erase(std::remove_if(worldProjectiles.begin(), worldProjectiles.end(), [](const std::unique_ptr<Entity>& e){
+        auto pr = dynamic_cast<Projectile*>(e.get());
+        return pr && pr->expired();
+    }), worldProjectiles.end());
+
+    // mouse click interaction — point-in-rect
+    bool leftClick = game.input().wasMousePressed(sf::Mouse::Button::Left);
+    sf::Vector2i pixelPos = sf::Mouse::getPosition(game.getWindow());
+    sf::Vector2f worldPos = game.getWindow().mapPixelToCoords(pixelPos, view);
+
+    // fire projectile toward mouse when Space is pressed
+    if (game.input().wasKeyPressed(sf::Keyboard::Key::Space)) {
+        sf::Vector2f dir = worldPos - player->position();
+        float len = std::sqrt(dir.x*dir.x + dir.y*dir.y);
+        if (len > 1e-6f) {
+            dir /= len;
+            spawnProjectile(std::make_unique<Projectile>(player->position(), dir * 300.f));
+        }
+    }
+
+    // update rail tool if enabled
+    if (railTool && railTool->enabled) {
+        railTool->update(worldPos, leftClick);
+        // regenerate rail entities after a placement/removal so world entities reflect tile state
+        if (leftClick) syncRailsWithMap();
+    } else {
+        if (leftClick) {
+            for (size_t i = 0; i < entities.size(); ++i) {
+                auto &e = entities[i];
+                if (e->getBounds().contains(worldPos)) {
+                    if (auto npc = dynamic_cast<NPC*>(e.get())) {
+                        dialog.start({ "Hello stranger.", "Nice weather today, isn't it?", "Press E or Space to continue." });
+                    } else {
+                        e->interact(player.get());
+                    }
                 }
             }
         }
@@ -170,6 +251,7 @@ void PlayState::update(sf::Time dt) {
 
         // if nothing interacted, try planting seeds on nearby soil
         if (!didInteract) {
+            std::cerr << "E pressed with no entity interaction: attempting to plant if seed available. Player pos=" << ppos.x << "," << ppos.y << "\n";
             // find a seed in inventory
             std::string foundSeedId;
             for (auto &it : player->inventory().items()) {
@@ -179,10 +261,12 @@ void PlayState::update(sf::Time dt) {
                 }
             }
             if (!foundSeedId.empty()) {
+                std::cerr << "Found seed in inventory: " << foundSeedId << "\n";
                 // find a nearby plantable tile (within interactDist)
                 unsigned ts = map.tileSize();
                 int px = static_cast<int>(std::floor(ppos.x)) / static_cast<int>(ts);
                 int py = static_cast<int>(std::floor(ppos.y)) / static_cast<int>(ts);
+                std::cerr << "Player tile coords: " << px << "," << py << " (tileSize=" << ts << ")\n";
                 bool planted = false;
                 for (int oy=-1; oy<=1 && !planted; ++oy) {
                     for (int ox=-1; ox<=1 && !planted; ++ox) {
@@ -192,8 +276,14 @@ void PlayState::update(sf::Time dt) {
                         sf::Vector2f center((float)tx * (float)ts + ts * 0.5f, (float)ty * (float)ts + ts * 0.5f);
                         float dx = center.x - ppos.x;
                         float dy = center.y - ppos.y;
-                        if (dx*dx + dy*dy > interactDistSq) continue;
+                        float dsq = dx*dx + dy*dy;
+                        std::cerr << "Checking tile " << tx << "," << ty << " center=" << center.x << "," << center.y << " distSq=" << dsq << "\n";
+                        if (dx*dx + dy*dy > interactDistSq) {
+                            std::cerr << "  -> tile too far, skipping\n";
+                            continue;
+                        }
                         if (map.isTilePlantable((unsigned)tx, (unsigned)ty)) {
+                            std::cerr << "  -> tile is plantable\n";
                             // consume one seed and spawn crop
                             if (player->inventory().removeItemById(foundSeedId, 1)) {
                                 // seed id has form seed_<cropid>
@@ -203,10 +293,19 @@ void PlayState::update(sf::Time dt) {
                                 std::cerr << "Planted seed " << foundSeedId << " at tile " << tx << "," << ty << "\n";
                                 // mark tile as non-plantable (set to Empty) to avoid replanting same spot
                                 map.setTile((unsigned)tx, (unsigned)ty, TileMap::Empty);
+                            } else {
+                                std::cerr << "  -> failed to remove seed from inventory (removeItemById returned false)\n";
                             }
+                        } else {
+                            std::cerr << "  -> tile not plantable\n";
                         }
                     }
                 }
+                if (!planted) {
+                    std::cerr << "Found seed '" << foundSeedId << "' but no nearby plantable tile within interact range.\n";
+                }
+            } else {
+                std::cerr << "No seed found in player inventory when attempting to plant.\n";
             }
         }
     }
@@ -242,6 +341,12 @@ void PlayState::draw() {
     player->draw(win);
     for (auto& e : entities) e->draw(win);
 
+    // draw projectiles
+    for (auto& p : worldProjectiles) p->draw(win);
+
+    // draw rail preview if enabled
+    if (railTool && railTool->enabled) railTool->drawPreview(win);
+
     // draw dialog UI on top
     dialog.draw(win);
 
@@ -261,6 +366,9 @@ void PlayState::saveGame(const std::string& path) {
         if (it) ids.push_back(it->id);
     }
     j["player"]["inventory"] = ids;
+
+    // tilemap
+    j["map"] = map.toJson();
 
     std::ofstream os(path);
     if (!os) {
@@ -287,5 +395,31 @@ void PlayState::loadGame(const std::string& path) {
             // not implemented: Inventory needs a clear/add by id helper; skip for now
         }
     }
+
+    if (j.contains("map")) {
+        map.fromJson(j["map"]);
+        syncRailsWithMap();
+    }
     std::cerr << "Loaded game\n";
+}
+
+void PlayState::syncRailsWithMap() {
+    // remove existing Rail entities first
+    entities.erase(std::remove_if(entities.begin(), entities.end(), [](const std::unique_ptr<Entity>& e){
+        return dynamic_cast<Rail*>(e.get()) != nullptr;
+    }), entities.end());
+
+    // create rails for each tile
+    for (unsigned y = 0; y < map.height(); ++y) {
+        for (unsigned x = 0; x < map.width(); ++x) {
+            if (map.isTileRail(x,y)) {
+                sf::Vector2f pos((float)x * map.tileSize(), (float)y * map.tileSize());
+                entities.push_back(std::make_unique<Rail>(game.resources(), pos, map.tileSize()));
+            }
+        }
+    }
+}
+
+void PlayState::spawnProjectile(std::unique_ptr<Entity> p) {
+    if (p) worldProjectiles.push_back(std::move(p));
 }

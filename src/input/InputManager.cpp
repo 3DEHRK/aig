@@ -1,4 +1,5 @@
 #include "InputManager.h"
+#include <iostream>
 
 const std::vector<sf::Keyboard::Key> InputManager::defaultTrackedKeys = {
     sf::Keyboard::Key::W,
@@ -12,7 +13,12 @@ const std::vector<sf::Keyboard::Key> InputManager::defaultTrackedKeys = {
     sf::Keyboard::Key::Left,
     sf::Keyboard::Key::Right,
     sf::Keyboard::Key::Up,
-    sf::Keyboard::Key::Down
+    sf::Keyboard::Key::Down,
+    // additional keys used by the UI and tools
+    sf::Keyboard::Key::I,    // inventory toggle
+    sf::Keyboard::Key::B,    // rail build tool toggle
+    sf::Keyboard::Key::F5,   // save
+    sf::Keyboard::Key::F9    // load
 };
 
 // track common mouse buttons
@@ -34,6 +40,14 @@ void InputManager::poll() {
         down[idx] = cur;
         pressed[idx] = (cur && !prev);
         last[idx] = cur;
+
+        // debug: log specific key presses to help diagnose missed inputs
+        if (pressed[idx]) {
+            if (k == sf::Keyboard::Key::E) std::cerr << "[InputManager] E pressed\n";
+            else if (k == sf::Keyboard::Key::I) std::cerr << "[InputManager] I pressed\n";
+            else if (k == sf::Keyboard::Key::B) std::cerr << "[InputManager] B pressed\n";
+            else if (k == sf::Keyboard::Key::Space) std::cerr << "[InputManager] Space pressed\n";
+        }
     }
 
     // sample mouse buttons
