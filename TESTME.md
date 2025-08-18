@@ -1,65 +1,65 @@
-TESTME — Manuelle Tests für Gameplay-Features
+# TESTME: Manual & Future Automated Test Guide
 
-Zweck
-Dieses Dokument listet manuelle Tests, die während der Entwicklung ausgeführt werden sollten. Für jede Funktion steht eine kurze Anleitung, wie man sie prüft und welches Ergebnis erwartet wird.
+## Purpose
+Living checklist for verifying core systems after changes. Convert into automated harness progressively.
 
-Hinweis: Vor jedem Test muss ein erfolgreicher Build vorhanden sein ("cmake --build ." ohne Fehler) und das Verzeichnis build/assets/ muss Assets enthalten.
+## Quick Start Regression (Manual)
+1. Launch game; ensure window opens without errors.
+2. Move player (WASD / arrow keys if supported) – collision blocks against solids.
+3. Press I: Inventory toggles open/close.
+4. Press H: Help overlay appears/disappears.
+5. Planting:
+   - Ensure at least one `seed_wheat` in inventory at start.
+   - Move near a plantable tile (brown). Press E (no entity targeted) -> crop appears; inventory seed count decrements.
+6. Growth:
+   - Wait (or speed modify if debug) until crop stage advances; upon completion & harvest logic (E), crop removes & tile returns plantable.
+7. Moisture/Fertility:
+   - Toggle M/N overlays; right‑click to water hovered tile (moisture alpha increases). Press F to fertilize player tile (fertility tint changes).
+8. Combat:
+   - Locate hostile (red). Shoot with Space; floating damage numbers appear; hostile disappears on death.
+9. Death / Respawn:
+   - Purposely receive damage (stand near hostile) until death screen shows; countdown ends; player respawns at last altar or initial point.
+   - If Y toggled ON (death penalty), verify non-seed stacks lose ~10% (≥1) on death.
+10. Respawn Aids:
+    - Toggle P (marker), O (distance text), T (units) and verify arrow & text when respawn is off-screen.
+11. Minimap:
+    - Toggle U (show/hide). Press J to cycle tile scale 2→3→4→2.
+    - Toggle V (viewport rect) & G (entity icons) on/off.
+    - Explore new area (move) – fog reveals correctly.
+12. Save/Load:
+    - Arrange unique state (crop planted mid-growth, hostile damaged, toggles changed, minimap scale altered).
+    - Press K (save). Quit application. Relaunch & press L (load). Verify restored state (player pos, health, minimap prefs, inventory, crops, hostiles health, soil stats).
+13. Rail Tool:
+    - Press B. Left-click plantable tiles to add/remove rails. Exit tool (B) then save (K) & reload (L) to ensure rails persist via map tile serialization.
 
-1) Robuste Inventory-UI (IMPLEMENTIERT)
-- Voraussetzung: Spiel startet ohne Fehler.
-- Schritte:
-  1. Starte das Spiel (./bin/sfml-game-framework).
-  2. Öffne das Inventory-UI mit Taste I.
-  3. Prüfe: UI zeigt ein Raster mit Slots, Itemnamen (oder Icons) und Stapelgrößen.
-  4. Teste Drag & Drop: Linksklick auf ein Item, klicke auf eine andere Zelle, das Item sollte bewegt/vertauscht werden.
-- Erwartetes Ergebnis: Items erscheinen im UI, Drag & Drop funktioniert, Stapelgrößen werden angezeigt.
+## Targeted Edge Tests
+- Planting fails gracefully if no seeds present (log message) – no crash.
+- Attempt planting on non-plantable tile – refused.
+- Projectile fired with no movement input uses default rightward direction.
+- Save while dead: After load, dead state restored & respawn timer resets.
+- Minimap bounds: Player near edges does not render viewport rectangle outside map.
 
-STATUS: OK (funktional; Positionierung relativ zum Spieler)
+## Data Integrity Checks (Future Automation)
+- JSON round-trip: save -> load -> save produces semantically equivalent structures (allow ordering differences).
+- Crops: after growth completion and removal, tile flagged Plantable again.
+- Inventory: serialization preserves counts & order (except removed empty stacks).
+- Soil arrays: lengths == width*height; values clamped within [0,1].
 
-2) Anpflanzen von Crops mit Samen (IMPLEMENTIERT)
-- Voraussetzung: Crops-Assets vorhanden (assets/textures/entities/crop1.png ...). Player startet mit ein paar "seed_wheat" in Inventory.
-- Schritte:
-  1. Starte das Spiel und nähere dich einem Bereich mit Soil-Tiles (sichtbar als dunklere Kacheln).
-  2. Drücke E, wenn du keine anderen Interaktionen hast; das System sucht in den umliegenden Kacheln nach Soil und pflanzt ein Crop (verbraucht 1 Seed).
-  3. Warte ein paar Sekunden und beobachte, wie die Crop-Stages wechseln.
-  4. Interagiere (E) an einer reifen Crop und prüfe, ob die Ernte ins Inventory geht.
-- Erwartetes Ergebnis: Seed wird verbraucht, Crop erscheint auf Soil, Stages wechseln und Ernte landet im Inventar.
+## Planned Automated Harness Tasks
+- Headless build flag `BUILD_HEADLESS` to instantiate PlayState without window & run fixed steps.
+- Scripted input queue feeding `InputManager` to replicate manual test sequence.
+- Assertion macros for invariants: entity bounds inside world, health within range, no duplicate rail tiles.
+- Snapshot comparator: hash of serialized JSON vs expected baseline per scenario.
 
-STATUS: OK - Planting and crop rendering confirmed (console shows planting logs and crop creation)
+## Performance Smoke
+- Measure frame time after spawning N hostiles (future) – ensure projectile loop remains performant (<2 ms on baseline machine for 50 hostiles).
 
-3) Eisenbahnsystem (IMPLEMENTIERT - grundlegendes Bauwerkzeug)
-- Voraussetzung: Rail-Textur optional (assets/textures/tiles/rail.png). Rail-Tool kann mit Taste 'B' umgeschaltet werden.
-- Schritte:
-  1. Starte das Spiel und drücke 'B' um den Rail-Bau-Modus zu aktivieren.
-  2. Bewege die Maus über Kacheln, eine Vorschau zeigt die aktuelle Kachel an.
-  3. Linksklick platziert eine Schiene auf der angezeigten Kachel; ein weiterer Klick entfernt sie.
-  4. Beobachte: Die TileMap wird aktualisiert und Rail-Entities werden im Spiel sichtbar.
-- Erwartetes Ergebnis: Du kannst Schienen platzieren und entfernen. Persistenz (Save/Load) der Schienen ist noch nicht implementiert.
+## Regression Checklist (Tick each before commit)
+- [ ] Build succeeds (Debug/Release)
+- [ ] All manual quick start steps pass
+- [ ] Save/Load state parity
+- [ ] No unintentional console spam/exceptions
+- [ ] README & docs updated for new feature flags
 
-STATUS: OK - texture scaling slightly small but functional
-
-4) Feindliche NPCs, die attackieren (Teil-IMPLEMENTIERT)
-- Voraussetzung: HostileNPC ist in PlayState gespawnt.
-- Schritte:
-  1. Starte das Spiel; ein feindlicher NPC sollte um (400,300) gespawnt sein.
-  2. Nähere dich dem NPC; beobachte, ob er dir folgt und in Reichweite angreift.
-- Erwartetes Ergebnis: HostileNPC verfolgt Spieler und entfernt zyklisch ein Item aus dem Inventory als einfacher Schadenstest.
-
-5) Abwehrwaffe gegen NPCs (PENDING)
-- Noch nicht implementiert: projectile/weapon system.
-
-6) Exploration & Hidden Discoveries (NEW)
-- Voraussetzung: Spiel startet; HiddenLocation test marker present at tile (10,10).
-- Schritte:
-  1. Starte das Spiel and move the player to tile (10,10) area.
-  2. Observe a purple marker indicating an undiscovered hidden location. Interact with it (E or click).
-  3. Expect: The marker disappears, a "Mysterious Dongle" is added to inventory, and a console log acknowledges discovery.
-- Erwartetes Ergebnis: Player receives a dongle item and the tile is marked discovered.
-
-STATUS: PENDING (test added)
-
-Allgemeine Hinweise
-- Fehlerdiagnose ist einfacher, wenn die Konsole-Logs (stderr/stdout) offen sind — prüfe dort auf Pfad-/Asset-Fehler.
-- Wenn ein Test fehlschlägt, notiere die Konsolenausgabe und die Schritte; ich kann dann den Fehler gezielt beheben.
-
-Wenn du mir eine erfolgreiche CMake-Build-Ausgabe schickst, markiere ich die erledigten Tests hier im Dokument und fahre mit dem nächsten Roadmap-Punkt fort.
+## Notes
+Update this file whenever a new feature adds input, persistence keys, or systemic interaction requiring verification.

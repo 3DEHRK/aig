@@ -4,21 +4,17 @@
 
 class Projectile : public Entity {
 public:
-    Projectile(const sf::Vector2f& pos, const sf::Vector2f& vel, float damage = 5.f, Entity* owner = nullptr);
+    Projectile(const sf::Vector2f& pos, const sf::Vector2f& vel, float speed = 300.f, float life = 2.f);
     void update(sf::Time dt) override;
-    void draw(sf::RenderWindow& window) override;
+    void draw(sf::RenderWindow& win) override;
     sf::FloatRect getBounds() const override;
-    void interact(Entity* by) override;
-
-    bool expired() const { return life <= 0.f; }
-    void kill() { life = 0.f; }
-
-    float getDamage() const { return damage; }
-    Entity* getOwner() const { return owner; }
+    void interact(Entity*) override {}
+    bool expired() const { return lifetime <= 0.f; }
+    void kill() { lifetime = 0.f; }
+    float damage = 3.f;
 private:
     sf::CircleShape shape;
     sf::Vector2f velocity;
-    float life = 2.0f; // seconds
-    float damage = 5.f;
-    Entity* owner = nullptr;
+    float speedVal;
+    float lifetime;
 };

@@ -38,7 +38,10 @@ void Altar::setRequiredItems(const std::vector<std::string>& items) {
 }
 
 void Altar::interact(Entity* by) {
-    if (active) return; // already activated
+    if (active) {
+        std::cerr << "Altar already active." << "\n";
+        return; // already activated
+    }
     auto player = dynamic_cast<Player*>(by);
     if (!player) return;
     // check inventory for required items
@@ -59,5 +62,5 @@ void Altar::interact(Entity* by) {
         player->inventory().removeItemById(id, 1);
     }
     active = true;
-    std::cerr << "Altar activated! Portal opens." << "\n";
+    std::cerr << "Altar activated! Portal opens. This spot can now be a respawn." << "\n";
 }

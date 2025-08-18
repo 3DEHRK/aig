@@ -2,6 +2,7 @@
 #include "../items/Item.h"
 #include <vector>
 #include <string>
+#include <nlohmann/json.hpp>
 
 class Inventory {
 public:
@@ -10,11 +11,10 @@ public:
     bool removeItemById(const std::string& id, int count = 1);
     const std::vector<ItemPtr>& items() const;
     size_t capacity() const;
-
-    // helpers for UI/editor
-    ItemPtr getItem(size_t index) const;
-    void setItem(size_t index, const ItemPtr& item);
-
+    void clear();
+    bool addItemById(const std::string& id, int count = 1); // simple factory by id (placeholder metadata)
+    nlohmann::json toJson() const;
+    void fromJson(const nlohmann::json& j);
 private:
     size_t cap;
     std::vector<ItemPtr> slots;

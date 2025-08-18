@@ -5,7 +5,7 @@
 ## 1. Vision & Current Trajectory
 A modular C++17 / SFML 3 foundation for a systemic top‑down simulation RPG blending: farming, logistics, light combat, environmental simulation (planned water & power), discovery / lore, and ritual transcendence loops. Current codebase represents an early vertical slice prototype: core loop (move → interact → plant → fight) exists, while automation, deep simulation, persistence breadth, and polishing layers are still embryonic.
 
-## 2. Implemented Runtime Systems (State: Prototype)
+## 2. Implemented Runtime Systems (State: Prototype Updated)
 - Game Loop & State Management: PlayState and HiddenRealmState (temporary portal scene) using polymorphic State base (not included in scan but implied). Transition triggered by Altar activation.
 - Rendering: Immediate mode draws via each entity’s draw method; no batching; basic view follow for player with clamp to map extents.
 - Input: Central InputManager (not re-documented here) polled per frame; supports wasKeyPressed style edge detection.
@@ -24,6 +24,10 @@ A modular C++17 / SFML 3 foundation for a systemic top‑down simulation RPG ble
 - Dialog: Simple queue of strings advanced via input; overlays game but halts world updates (except special cases for realm confirmation).
 - SaveGame (skeleton): Limited to player position & inventory IDs; tilemap JSON serialization stubbed; many systems unsaved.
 - SoundManager: SFML 3 compatible buffer cache + ephemeral sound instances; not integrated into gameplay events beyond potential manual calls.
+- Minimap: Advanced layers including fog-of-war, scalable tile size, optional viewport rectangle, entity category icons, player & respawn markers.
+- Respawn Navigation: Off-screen arrow + distance formatting with unit toggle.
+- Death Penalty: Toggle with inventory reduction logic (seed exemption).
+- Help Overlay: Controls overlay with persistence.
 
 ## 3. World & Spatial Systems
 - TileMap: Provides tile-based world with plantability checks and collision queries (AABB). Discovery flags for hidden locations. No chunk streaming, no layering (foreground/background), no pathfinding grid metadata.
@@ -90,11 +94,8 @@ Version gating allows migrations; each system registers serializer/deserializer 
 
 Memory Footprint: Keep each tile ≤ 16 bytes for large maps (pack fertility/moisture into uint16). Use SoA (structure of arrays) for simulation-heavy layers later.
 
-## 10. Testing & Debug Tooling Roadmap
-- Debug Overlay: FPS, entity counts, update timings.
-- Inspect Mode: Click entity → dump JSON state to console.
-- Deterministic Seed Replay: Record input events for regression runs.
-- Assertion Layer: e.g., validate no entity leaves world bounds post-update.
+## 10. Testing & Debug Tooling Roadmap (Updated)
+Implemented manual test checklist (`TESTME.md`) covering planting, overlays, minimap toggles, death/respawn, save/load integrity. Next automation: headless mode, input replay, invariant assertions, JSON round‑trip comparator.
 
 ## 11. Risk Analysis (Forward-Looking)
 | Risk | Description | Mitigation |
@@ -166,8 +167,8 @@ Even offline game benefits from input sanitization for data files. Validate JSON
 - Optionally integrate a lightweight Github Actions workflow (build + run headless tests).
 - Script asset audit (list missing texture files vs manifest).
 
-## 20. Summary & Strategic Focus
-Core scaffolding is sound for a prototype. Immediate risk is divergence due to absent detailed specs and overloading PlayState. Short-term investment in documentation, modular systems extraction, and save breadth will reduce future rewrite cost. Prioritize player feedback loops (audio/particles) to ensure iterative feel testing informs deeper system design rather than building large silent simulations.
+## 20. Summary & Strategic Focus (Amended)
+Focus now shifts to: (1) finalize persistence gaps (altar/dialog state), (2) deepen farming via soil influence, (3) extract simulation subsystems for testability (headless harness), (4) introduce feedback (particles/SFX) before large new simulation layers (power/water).
 
 ---
 Prepared as an authoritative interim design & architecture reference until detailed feature documents are reinstated.

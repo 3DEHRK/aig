@@ -1,14 +1,16 @@
 #pragma once
 #include "Entity.h"
 #include <SFML/Graphics.hpp>
+#include <vector>
+#include <memory>
 #include "../input/InputManager.h"
 #include "../systems/Inventory.h"
 
-class ResourceManager;
+class Projectile;
 
 class Player : public Entity {
 public:
-    Player(InputManager& input, ResourceManager& resources);
+    Player(InputManager& input);
     void update(sf::Time) override; // processes input and sets desired movement (but does not commit movement)
     void draw(sf::RenderWindow&) override;
     sf::FloatRect getBounds() const override;
@@ -27,28 +29,35 @@ public:
 
     Inventory& inventory(); // access player's inventory
 
-    // projectiles fired by player
-    std::vector<std::unique_ptr<Entity>> projectiles;
-
-    // fire a projectile in a direction (normalized)
-    void fireProjectile(const sf::Vector2f& dir);
-
-    // health API
-    void takeDamage(float amount, const sf::Vector2f& knockback = sf::Vector2f(0.f, 0.f));
-    bool isDead() const { return health <= 0.f; }
+    // Health interface
     float getHealth() const { return health; }
     float getMaxHealth() const { return maxHealth; }
-    void healToFull() { health = maxHealth; }
+    bool isDead() const { return health <= 0.f; }
+    void takeDamage(float amt) { if (invulnTimeRemaining > 0.f) return; health = std::max(0.f, health - amt); sinceDamage = 0.f; damageAccumulatedThisLife += amt; }
+    // track damage taken since last respawn for potential death penalties
+    float damageThisLife() const { return damageAccumulatedThisLife; }
+    void resetLifeStats() { damageAccumulatedThisLife = 0.f; }
+    void healToFull() { health = maxHealth; sinceDamage = 0.f; }
+    void updateHealthRegen(sf::Time dt);
+    float timeSinceDamage() const { return sinceDamage; }
+
+    // Projectile spawner placeholder (PlayState harvests this list)
+    std::vector<std::unique_ptr<Entity>> projectiles;
+
+    void triggerInvulnerability(float seconds) { invulnTimeRemaining = seconds; }
+    bool isInvulnerable() const { return invulnTimeRemaining > 0.f; }
 private:
-    sf::Sprite sprite;
+    sf::RectangleShape shape;
     float speed;
     mutable sf::Vector2f vel; // mutable so computeDesiredMove can be const
     InputManager& input;
     Inventory inv; // player's inventory
     bool interactPressed = false;
-    float maxHealth = 10.f;
-    float health = 10.f;
-    // hit feedback
-    float hitTimer = 0.f;
-    float hitDuration = 0.18f; // seconds
+    float health = 100.f;
+    float maxHealth = 100.f;
+    float regenRate = 2.f; // hp per second when conditions met
+    float regenDelay = 5.f; // seconds after last damage
+    float sinceDamage = 0.f;
+    float invulnTimeRemaining = 0.f;
+    float damageAccumulatedThisLife = 0.f;
 };

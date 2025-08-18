@@ -18,6 +18,9 @@ public:
 
     void setRequiredItems(const std::vector<std::string>& items); // specify ritual requirements
     bool isActive() const { return active; }
+    bool grantsRespawn() const { return active; }
+    const std::vector<std::string>& getRequiredItems() const { return requiredItems; }
+    void forceActive(bool a) { active = a; }
 private:
     std::unique_ptr<sf::Sprite> sprite; // SFML3 sprite requires texture in ctor
     bool active = false;
