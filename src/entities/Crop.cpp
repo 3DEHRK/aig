@@ -96,6 +96,8 @@ void Crop::interact(Entity* other) {
         if (p->inventory().addItem(yieldItem)) {
             harvested = true;
             std::cout << "Harvested crop and added to inventory\n";
+            // TODO: play harvest sound and spawn particles (SFX manager integration pending)
+            std::cerr << "(SFX) play harvest sound and spawn particles\n";
         } else {
             std::cout << "Inventory full, cannot harvest\n";
         }

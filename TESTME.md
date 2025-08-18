@@ -48,6 +48,16 @@ STATUS: OK - texture scaling slightly small but functional
 5) Abwehrwaffe gegen NPCs (PENDING)
 - Noch nicht implementiert: projectile/weapon system.
 
+6) Exploration & Hidden Discoveries (NEW)
+- Voraussetzung: Spiel startet; HiddenLocation test marker present at tile (10,10).
+- Schritte:
+  1. Starte das Spiel and move the player to tile (10,10) area.
+  2. Observe a purple marker indicating an undiscovered hidden location. Interact with it (E or click).
+  3. Expect: The marker disappears, a "Mysterious Dongle" is added to inventory, and a console log acknowledges discovery.
+- Erwartetes Ergebnis: Player receives a dongle item and the tile is marked discovered.
+
+STATUS: PENDING (test added)
+
 Allgemeine Hinweise
 - Fehlerdiagnose ist einfacher, wenn die Konsole-Logs (stderr/stdout) offen sind — prüfe dort auf Pfad-/Asset-Fehler.
 - Wenn ein Test fehlschlägt, notiere die Konsolenausgabe und die Schritte; ich kann dann den Fehler gezielt beheben.

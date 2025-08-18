@@ -5,6 +5,7 @@
 class State;
 class ResourceManager;
 class InputManager;
+class SoundManager;
 
 class Game {
 public:
@@ -14,6 +15,9 @@ public:
     sf::RenderWindow& getWindow() { return window; }
     ResourceManager& resources();
     InputManager& input();
+    SoundManager& sound();
+    // allow replacing the active state
+    void setState(std::unique_ptr<State> s);
 private:
     void processEvents();
     void update(sf::Time dt);
@@ -23,5 +27,6 @@ private:
     std::unique_ptr<State> currentState;
     std::unique_ptr<ResourceManager> resourceManager;
     std::unique_ptr<InputManager> inputManager;
+    std::unique_ptr<SoundManager> soundManager;
     sf::View camera;
 };

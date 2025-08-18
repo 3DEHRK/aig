@@ -40,13 +40,15 @@ Player::Player(InputManager& inputMgr, ResourceManager& resources)
     sprite.setPosition(sf::Vector2f{512.f, 384.f});
 }
 
-void Player::update(sf::Time /*dt*/) {
+void Player::update(sf::Time dt) {
     // only update input-derived flags/velocity here (no movement commit)
     vel = {0.f, 0.f};
     if (input.isKeyDown(sf::Keyboard::Key::W)) vel.y -= speed;
     if (input.isKeyDown(sf::Keyboard::Key::S)) vel.y += speed;
     if (input.isKeyDown(sf::Keyboard::Key::A)) vel.x -= speed;
     if (input.isKeyDown(sf::Keyboard::Key::D)) vel.x += speed;
+    // decrement hit timer using provided dt
+    if (hitTimer > 0.f) hitTimer -= dt.asSeconds();
     // NOTE: do not consume the E key here (wasKeyPressed) — PlayState handles interaction presses.
 }
 
@@ -68,6 +70,12 @@ sf::Vector2f Player::size() const {
 }
 
 void Player::draw(sf::RenderWindow& window) {
+    // visual feedback when recently hit
+    if (hitTimer > 0.f) {
+        sprite.setColor(sf::Color(255, 180, 180));
+    } else {
+        sprite.setColor(sf::Color::White);
+    }
     window.draw(sprite);
 }
 
@@ -86,12 +94,18 @@ void Player::fireProjectile(const sf::Vector2f& dir) {
     sf::Vector2f nd = {dir.x/len, dir.y/len};
     sf::Vector2f pos = sprite.getPosition();
     sf::Vector2f vel = nd * 300.f; // projectile speed
-    projectiles.push_back(std::make_unique<Projectile>(pos, vel));
+    // create projectile with damage and owner set to this player
+    projectiles.push_back(std::make_unique<Projectile>(pos, vel, 6.f, this));
 }
 
-void Player::takeDamage(float amount) {
+void Player::takeDamage(float amount, const sf::Vector2f& knockback) {
     health -= amount;
     if (health < 0.f) health = 0.f;
+    // apply knockback instantly
+    if (knockback.x != 0.f || knockback.y != 0.f) {
+        sprite.move(knockback);
+    }
+    hitTimer = hitDuration;
     std::cerr << "Player took " << amount << " damage. health=" << health << "/" << maxHealth << "\n";
 }
 

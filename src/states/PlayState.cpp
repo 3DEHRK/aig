@@ -7,6 +7,9 @@
 #include "../entities/Crop.h"
 #include "../entities/Rail.h"
 #include "../entities/HostileNPC.h"
+#include "../entities/HiddenLocation.h"
+#include "../entities/Altar.h"
+#include "../states/HiddenRealmState.h"
 #include "../input/InputManager.h"
 #include <SFML/Window/Mouse.hpp>
 #include <iostream>
@@ -73,8 +76,20 @@ PlayState::PlayState(Game& g)
     entities.push_back(std::make_unique<Rail>(game.resources(), sf::Vector2f(232.f, 200.f), map.tileSize()));
     entities.push_back(std::make_unique<Rail>(game.resources(), sf::Vector2f(264.f, 200.f), map.tileSize()));
 
+    // create a test altar
+    entities.push_back(std::make_unique<Altar>(game.resources(), sf::Vector2f(900.f, 600.f)));
+    if (auto altar = dynamic_cast<Altar*>(entities.back().get())) {
+        altar->setRequiredItems({"dongle_mysterious"});
+    }
+
     // spawn a hostile NPC targeting the player
     entities.push_back(std::make_unique<HostileNPC>(game.resources(), sf::Vector2f(400.f, 300.f), player.get()));
+
+    // add a hidden location test marker at tile (10,10)
+    unsigned hx = 10, hy = 10;
+    float tsf = (float)map.tileSize();
+    sf::Vector2f hpos((float)hx * tsf + tsf * 0.5f, (float)hy * tsf + tsf * 0.5f);
+    entities.push_back(std::make_unique<HiddenLocation>(map, hx, hy));
 
     // ensure NPCs get a pointer to the world TileMap for simple collision checks
     for (auto &e : entities) {
@@ -127,9 +142,12 @@ void PlayState::update(sf::Time dt) {
     if (dialog.active()) {
         dialog.update(game.input(), dt);
         // still allow dialog to be drawn; update early-return so game world pauses
-        // per-frame input housekeeping
-        game.input().clearFrame();
-        return;
+        // if this dialog is a hidden-realm confirmation, allow the state to continue
+        if (!hiddenRealmActive) {
+            // per-frame input housekeeping
+            game.input().clearFrame();
+            return;
+        }
     }
 
     // if player is dead, run respawn timer and skip world updates until respawn
@@ -186,6 +204,26 @@ void PlayState::update(sf::Time dt) {
 
     for (auto& e : entities) e->update(dt);
 
+    // check for activated altars and handle transition to HiddenRealmState
+    for (auto &e : entities) {
+        if (auto altar = dynamic_cast<Altar*>(e.get())) {
+            if (altar->isActive() && !hiddenRealmActive) {
+                // confirm activation via dialog
+                dialog.start({ "The altar hums with power.", "Do you wish to step through the portal? (Press E)" });
+                // mark as pending; once player confirms (E) we will switch states
+                hiddenRealmActive = true;
+            }
+        }
+    }
+
+    // if player confirms while awaiting hidden realm, switch states
+    if (hiddenRealmActive && game.input().wasKeyPressed(sf::Keyboard::Key::E)) {
+        std::cerr << "Player confirmed entering hidden realm. Switching state...\n";
+        // push hidden realm state
+        game.setState(std::make_unique<HiddenRealmState>(game));
+        return; // Stop further world updates; new state takes over
+    }
+
     // update projectiles
     for (auto& p : worldProjectiles) p->update(dt);
 
@@ -203,8 +241,9 @@ void PlayState::update(sf::Time dt) {
                                  pb.position.y + pb.size.y <= hb.position.y ||
                                  hb.position.y + hb.size.y <= pb.position.y);
                 if (overlap) {
-                    // apply damage to hostile NPC
-                    hn->takeDamage(5.f);
+                    // apply projectile's damage
+                    float dmg = proj->getDamage();
+                    hn->takeDamage(dmg);
                     // destroy the projectile
                     proj->kill();
                     // if NPC is dead, remove it

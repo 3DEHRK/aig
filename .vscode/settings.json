@@ -2,5 +2,6 @@
     "files.associations": {
         "typeinfo": "cpp",
         "ios": "cpp"
-    }
+    },
+    "chat.agent.maxRequests": 100
 }

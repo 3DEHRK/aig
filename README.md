@@ -236,37 +236,19 @@ If you want, I can also add a short contributing guide, a roadmap, or create an 
 
 ## Offene Features (Roadmap / To‑do)
 
-Diese Liste enthält offene Features und den aktuellen Status; ich arbeite die Punkte in der angegebenen Reihenfolge ab.
+Diese Liste enthält offene Features und den aktuellen Status; ich arbeite die Punkte in der angegebenen Reihenfolge ab. Die Liste wird automatisch vom Assistenten aktualisiert, wenn Features implementiert oder in Arbeit genommen werden.
 
 1. ✅ Robuste Inventory-UI — basic grid UI implemented (drag & drop, icon support); needs visual polish and keyboard shortcuts
 2. ✅ Anpflanzen von Crops mit Samen — basic crop growth & harvest implemented
 3. ✅ Eisenbahnsystem mit baubaren Schienen — basic rail build tool implemented (press 'B' to toggle build mode; click to place/remove rails on tiles). Persistence in save/load pending.
-4. ⬜ Feindliche NPCs, welche attackieren — partial implemented (HostileNPC prototype that chases and 'attacks')
-5. ⬜ Abwehrwaffe gegen NPCs — pending
-6. work on bug list below
-7. add ingame message / log system for player infos and logging
-8. reitterate over all features improving usability, quality, add detail
-9. add water, farmland and different seeds... expand farming mechanism in creative ways
+4. 🟡 Feindliche NPCs, welche attackieren — partial implemented (HostileNPC prototype that chases and attacks). In progress: health, damage, projectiles and death handling.
+5. ⬜ Abwehrwaffe gegen NPCs — pending (projectile weapons, damage types, cooldowns)
+6. ⬜ Fehlerliste abarbeiten — ongoing bug fixes and polish (camera clamp, UI polish, dialogs, missing assets diagnostics)
+7. ⬜ Ingame Message / Log System — pending (toast/rolling log for player messages & debug)
+8. ⬜ Reiterate all features — UX polish
+9. ⬜ Water / Power simulation & improved farming — design docs present; implementation pending
 
-
-## Known issues / Buglist 🐞
-
-A short, visible checklist of current issues (updated as I fix them):
-
-- [ ] 🧍 NPCs have no collision or pathing restrictions — they can overlap walls and static objects.
-- [ ] 💬 Dialog box positioning is game-world relative (attached to NPC); make it screen-anchored/UI overlay.
-- [x] 🎒 Inventory UI not present in earlier versions — now implemented (see above).
-- [ ] 🖼️ Inventory visuals need polish (icons, tooltips, keyboard navigation, stacking behavior).
-- [ ] 🧭 Camera / view clamping edge-cases: player near map edges can cause jitter on small windows.
-- [ ] ⚠️ Missing assets currently fallback silently to empty textures — consider clearer editor-time diagnostics or placeholders.
-
-
-Arbeitsablauf
-- Du führst `cmake --build .` aus und sendest mir die vollständige erfolgreiche Build-Ausgabe, oder ich wille die Änderungen lokal bauen wenn du es erlaubst.
-- Ich arbeite die Liste in der angegebenen Reihenfolge ab. Für jedes Feature erstelle ich einen kurzen Testplan (in `TESTME.md`), implementiere die notwendigen Dateien/Änderungen und fasse die fertigen Änderungen zusammen.
-- Nach Abschluss aller angeforderten Punkte schlage ich zusätzliche Entwicklungs‑/Polish‑Ideen vor und kann diese in die Liste aufnehmen.
-
-Wenn du bereit bist, sende die erfolgreiche Build-Ausgabe und ich beginne mit Punkt 3 oder ich implementiere Punkt 3 direkt if you prefer.
+Hinweis: Wenn du "keep working" sagst und der Build sauber ist, arbeite ich die obenstehende Liste in dieser Reihenfolge ab und aktualisiere die Häkchen/Status hier sowie in `docs/features/*.md` und `TESTME.md`.
 
 ---
 

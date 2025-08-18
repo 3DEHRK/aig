@@ -1,7 +1,7 @@
 #include "Projectile.h"
 
-Projectile::Projectile(const sf::Vector2f& pos, const sf::Vector2f& vel)
-: velocity(vel)
+Projectile::Projectile(const sf::Vector2f& pos, const sf::Vector2f& vel, float dmg, Entity* own)
+: velocity(vel), damage(dmg), owner(own)
 {
     shape.setRadius(4.f);
     shape.setFillColor(sf::Color::Cyan);

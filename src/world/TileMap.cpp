@@ -5,31 +5,33 @@
 #include <iostream>
 
 TileMap::TileMap(unsigned width, unsigned height, unsigned tileSize)
-: w(width), h(height), ts(tileSize), tiles(w*h, TileMap::Empty) {}
+: w(width), h(height), ts(tileSize), tiles(w*h, TileType::Empty), discovered(w*h, 0)
+{
+}
 
 void TileMap::generateTestMap() {
-    // create borders
-    for (unsigned x = 0; x < w; ++x) {
-        setTile(x, 0, TileMap::Solid);
-        setTile(x, h-1, TileMap::Solid);
-    }
+    // simple ground and a soil patch near tile (6,6)
     for (unsigned y = 0; y < h; ++y) {
-        setTile(0, y, TileMap::Solid);
-        setTile(w-1, y, TileMap::Solid);
-    }
-
-    // create a patch of soil in the upper left
-    for (unsigned y = 5; y < 9; ++y) {
-        for (unsigned x = 4; x < 10; ++x) {
-            setTile(x, y, TileMap::Soil);
+        for (unsigned x = 0; x < w; ++x) {
+            if (y > h/2) tiles[y*w + x] = TileType::Solid;
+            else tiles[y*w + x] = TileType::Empty;
         }
     }
+    // add a soil patch
+    for (unsigned y = 6; y <= 8; ++y) for (unsigned x = 5; x <= 8; ++x) tiles[y*w + x] = TileType::Soil;
 
-    // create a small rail line
-    unsigned rx = 6, ry = 18;
-    for (unsigned i = 0; i < 6; ++i) {
-        setTile(rx + i, ry, TileMap::Rail);
-    }
+    // mark a hidden location for testing at tile 10,10 (discovered=false initially)
+    if (10 < w && 10 < h) discovered[10*w + 10] = 0;
+}
+
+bool TileMap::isDiscovered(unsigned tx, unsigned ty) const {
+    if (tx >= w || ty >= h) return false;
+    return discovered[ty*w + tx] != 0;
+}
+
+void TileMap::setDiscovered(unsigned tx, unsigned ty, bool v) {
+    if (tx >= w || ty >= h) return;
+    discovered[ty*w + tx] = v ? 1 : 0;
 }
 
 void TileMap::draw(sf::RenderWindow& window) {

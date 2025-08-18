@@ -57,4 +57,13 @@ private:
     float respawnTimer = 0.f;
     float respawnDelay = 3.f; // seconds until respawn
     sf::Vector2f respawnPos;
+
+    // hidden realm (transcendence) mode
+    bool hiddenRealmActive = false;
+    nlohmann::json savedMapJson;
+    std::vector<std::unique_ptr<Entity>> savedEntities;
+    sf::Vector2f savedPlayerPos;
+
+    void enterHiddenRealm();
+    void exitHiddenRealm();
 };

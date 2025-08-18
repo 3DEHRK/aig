@@ -3,6 +3,7 @@
 #include "../states/PlayState.h"
 #include "../resources/ResourceManager.h"
 #include "../input/InputManager.h"
+#include "../systems/SoundManager.h"
 #include <variant>
 #include <type_traits>
 #include <SFML/Config.hpp>
@@ -17,6 +18,7 @@ Game::Game()
 {
     resourceManager = std::make_unique<ResourceManager>();
     inputManager = std::make_unique<InputManager>();
+    soundManager = std::make_unique<SoundManager>();
     currentState = std::make_unique<PlayState>(*this);
     window.setFramerateLimit(60);
 }
@@ -88,3 +90,5 @@ void Game::render() {
 
 ResourceManager& Game::resources() { return *resourceManager; }
 InputManager& Game::input() { return *inputManager; }
+SoundManager& Game::sound() { return *soundManager; }
+void Game::setState(std::unique_ptr<State> s) { currentState = std::move(s); }

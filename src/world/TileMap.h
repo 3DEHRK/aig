@@ -32,7 +32,12 @@ public:
     nlohmann::json toJson() const;
     void fromJson(const nlohmann::json& j);
 
+    // discovery flags for hidden locations (parallel to tiles array)
+    bool isDiscovered(unsigned tx, unsigned ty) const;
+    void setDiscovered(unsigned tx, unsigned ty, bool v=true);
+
 private:
     unsigned w, h, ts;
     std::vector<uint8_t> tiles; // 0 = empty, 1 = solid, 2 = soil, 3 = rail
+    std::vector<uint8_t> discovered; // 0 = unknown, 1 = discovered
 };

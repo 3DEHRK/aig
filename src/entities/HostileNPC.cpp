@@ -48,7 +48,14 @@ void HostileNPC::update(sf::Time dt) {
             std::cerr << "HostileNPC attacks player!\n";
             // apply damage to the player health instead of removing inventory items
             if (playerTarget) {
-                playerTarget->takeDamage(2.f);
+                // compute knockback away from npc center
+                sf::FloatRect hb = getBounds();
+                sf::Vector2f center(hb.position.x + hb.size.x*0.5f, hb.position.y + hb.size.y*0.5f);
+                sf::Vector2f ppos = playerTarget->position();
+                sf::Vector2f kb = ppos - center;
+                float len = std::sqrt(kb.x*kb.x + kb.y*kb.y);
+                if (len > 1e-6f) { kb.x /= len; kb.y /= len; kb *= 16.f; } // small knockback
+                playerTarget->takeDamage(2.f, kb);
                 std::cerr << "HostileNPC dealt 2 damage to player.\n";
             }
         }

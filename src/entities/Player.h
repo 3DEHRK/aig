@@ -34,7 +34,7 @@ public:
     void fireProjectile(const sf::Vector2f& dir);
 
     // health API
-    void takeDamage(float amount);
+    void takeDamage(float amount, const sf::Vector2f& knockback = sf::Vector2f(0.f, 0.f));
     bool isDead() const { return health <= 0.f; }
     float getHealth() const { return health; }
     float getMaxHealth() const { return maxHealth; }
@@ -48,4 +48,7 @@ private:
     bool interactPressed = false;
     float maxHealth = 10.f;
     float health = 10.f;
+    // hit feedback
+    float hitTimer = 0.f;
+    float hitDuration = 0.18f; // seconds
 };
