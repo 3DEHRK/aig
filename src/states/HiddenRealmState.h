@@ -8,7 +8,7 @@ class HiddenRealmState : public State {
 public:
     HiddenRealmState(Game& g);
     void handleEvent(const sf::Event&) override;
-    void update(sf::Time dt) override;
+    void update(sf::Time) override;
     void draw() override;
 private:
     Game& game;

@@ -1,209 +1,209 @@
--- === User settings ===
-local SHELL_CMD = [[
-cd ~/Documents/aig/sfml-game-framework &&
-rm -rf build &&
-mkdir -p build &&
-cd build &&
-{
-  echo "===== $(date '+%Y-%m-%d %H:%M:%S') ====="
-  echo "PWD: $(pwd)"
-  cmake ..
-  cmake --build .
-} > build.log 2>&1
-]]
-local PROMPT_TEXT       = [[keep working]]
-local VS_CODE_NAME      = "Visual Studio Code"  -- or "VSCodium"
-local ENTER_KEY_TO_SEND = true                  -- Copilot sends on Enter
+-- ~/.hammerspoon/init.lua
+-- Loop: build (headless) -> wait -> click chat -> type -> wait -> click second -> wait -> repeat
+-- Hotkeys:
+--   ⌥⌘P  : set chat input position
+--   ⌥⌘O  : set second click position
+--   ⌥⌘L  : start loop
+--   ⌥⌘K  : stop loop
+--   ⌥⌘T  : test one iteration (no loop)
 
--- Timings (seconds)
-local DELAY_BEFORE_CMD   = 1
-local WAIT_BEFORE_PROMPT = 80
-local WAIT_BEFORE_KEEP   = 130
-local LOOP_BUFFER        = 5
-local LOOP_SECONDS       = DELAY_BEFORE_CMD + WAIT_BEFORE_PROMPT + WAIT_BEFORE_KEEP + LOOP_BUFFER
--- ======================
+----------------------------------------------------------------------
+-- USER SETTINGS
+----------------------------------------------------------------------
 
-local loopTimer = nil
-local liveTimers = {}   -- just hold refs; no deletion on fire
+local HOME = os.getenv("HOME")
 
--- ===== Utilities =====
-local function note(title, txt)
-  hs.notify.new({title=title, informativeText=txt}):send()
+-- <<< YOUR PROJECT PATHS >>>
+local PROJECT_DIR = HOME .. "/Documents/aig/sfml-game-framework"  -- <- set yours
+local BUILD_DIR   = PROJECT_DIR .. "/build"
+
+-- timings
+local COMMAND_DELAY_SEC = 90        -- wait 90s after starting build
+local AFTER_MESSAGE_DELAY_SEC = 150 -- wait 2:30 after typing "keep working"
+local RESTART_DELAY_SEC = 1
+
+-- chat text
+local PROMPT_TEXT = "keep working"
+local ENTER_AFTER_TYPING = true
+
+-- micro timings
+local CLICK_SLEEP = 0.15
+local TYPE_SLEEP = 0.05
+
+----------------------------------------------------------------------
+-- BUILD COMMAND (headless; full log to build.log)
+----------------------------------------------------------------------
+
+local function shq(s) return string.format("%q", s) end
+
+-- We exec to redirect ALL subsequent stdout/stderr into build.log, ensuring the full log is captured.
+local bash = table.concat({
+  "set -o pipefail",
+  "cd " .. shq(PROJECT_DIR),
+  "rm -rf build",
+  "mkdir -p build",
+  "cd build",
+  -- from here, all output of both cmake steps goes into build.log (stdout+stderr)
+  "exec > build.log 2>&1",
+  "cmake ..",
+  "cmake --build ."
+}, " && ")
+
+----------------------------------------------------------------------
+-- PERSISTED POSITIONS
+----------------------------------------------------------------------
+
+local function savePoint(key, pt) hs.settings.set(key, {x=pt.x, y=pt.y}) end
+local function loadPoint(key)
+  local t = hs.settings.get(key)
+  if t and t.x and t.y then return hs.geometry.point(t.x, t.y) end
+  return nil
 end
 
-local function say(msg)
-  hs.task.new("/usr/bin/say", nil, {msg}):start()
-  hs.printf("[HS] %s", msg)
-end
+local POS_KEYS = { input = "copilot_input_point", second = "second_click_point" }
 
-local function flashAtPoint(pt)
-  local r = hs.drawing.circle(hs.geometry.rect(pt.x-10, pt.y-10, 20, 20))
-  r:setStroke(true):setFill(false):setStrokeWidth(4):setStrokeColor({red=1,green=0,blue=0,alpha=0.9})
-  r:show()
-  hs.timer.doAfter(0.18, function() r:delete() end)
-end
+local positions = {
+  input  = loadPoint(POS_KEYS.input),
+  second = loadPoint(POS_KEYS.second),
+}
 
-local function typeText(text)
-  local old = hs.pasteboard.getContents()
-  hs.pasteboard.setContents(text)
-  hs.eventtap.keyStroke({"cmd"}, "v", 0)
-  hs.timer.usleep(120000)
-  hs.pasteboard.setContents(old or "")
-end
+----------------------------------------------------------------------
+-- UTILITIES
+----------------------------------------------------------------------
 
-local function runShellCommand()
-  say("Running build command")
-  hs.task.new("/bin/zsh", function() end, {"-lc", SHELL_CMD}):start()
-end
+local function notify(txt) hs.alert.show(txt, 1.2) end
+local function usleepSeconds(sec) hs.timer.usleep(math.floor(sec * 1e6)) end
 
-local function focusVSCode()
-  hs.application.launchOrFocus(VS_CODE_NAME)
-  hs.timer.usleep(300000)
-end
-
-local function clickAtPoint(pt)
-  local restore = hs.mouse.absolutePosition()
-  hs.mouse.absolutePosition(pt)
-  flashAtPoint(pt)
+local function moveAndClick(pt)
+  hs.mouse.setAbsolutePosition(pt)
+  usleepSeconds(CLICK_SLEEP)
   hs.eventtap.leftClick(pt, 0)
-  hs.timer.usleep(150000)
-  hs.mouse.absolutePosition(restore)
+  usleepSeconds(CLICK_SLEEP)
 end
 
-local function clickCopilotInput()
-  local pt = hs.settings.get("copilotInputPoint")
-  if not pt then
-    say("Copilot input point not set")
-    note("Copilot input not set","Press ⌃⌥⌘P while cursor is on the Copilot chat field.")
-    return false
-  end
-  say(string.format("Clicking Copilot input at x=%.0f y=%.0f", pt.x, pt.y))
-  clickAtPoint(pt)
+local function typeText(txt)
+  usleepSeconds(TYPE_SLEEP)
+  hs.eventtap.keyStrokes(txt)
+  if ENTER_AFTER_TYPING then hs.eventtap.keyStroke({}, "return") end
+end
+
+local function ensurePositions()
+  if not positions.input then notify("Set chat input: ⌥⌘P"); return false end
+  if not positions.second then notify("Set second spot: ⌥⌘O"); return false end
   return true
 end
 
-local function clickKeepButton()
-  local pt = hs.settings.get("keepButtonPoint")
-  if not pt then
-    say("Keep button point not set")
-    note("Keep button not set","Press ⌃⌥⌘K while cursor is on the Keep button.")
-    return false
+----------------------------------------------------------------------
+-- HEADLESS SHELL TASK (no Terminal/iTerm)
+----------------------------------------------------------------------
+
+local currentBuildTask = nil
+
+local function runHeadlessBuild(command)
+  -- Kill any previous build task
+  if currentBuildTask then
+    currentBuildTask:terminate()
+    currentBuildTask = nil
   end
-  say(string.format("Clicking Keep button at x=%.0f y=%.0f", pt.x, pt.y))
-  clickAtPoint(pt)
-  return true
-end
 
-local function sendPrompt()
-  say("Sending prompt to Copilot")
-  typeText(PROMPT_TEXT)
-  if ENTER_KEY_TO_SEND then
-    hs.eventtap.keyStroke({}, "return", 0)
+  -- Run under /bin/bash -lc "<command>"
+  local onExit = function(_, _, _)
+    -- nothing to do; we use a fixed wait below via timers
   end
+
+  currentBuildTask = hs.task.new("/bin/bash", onExit, {"-lc", command})
+  currentBuildTask:start()
 end
 
--- Robust one-shot timer that keeps a strong ref
-local function doAfterKeepRef(seconds, fn)
-  local t = hs.timer.doAfter(seconds, function()
-    local ok, err = pcall(fn)
-    if not ok then
-      say("Timer error: "..tostring(err))
-      hs.printf("Timer error: %s", tostring(err))
-    end
-  end)
-  table.insert(liveTimers, t)
-  return t
-end
+----------------------------------------------------------------------
+-- LOOP CONTROL
+----------------------------------------------------------------------
 
--- ===== Orchestrator =====
--- One cycle: +1s build → +90s prompt → +220s keep  (total ~311s). Loop every 316s.
-local function runCycle()
-  doAfterKeepRef(DELAY_BEFORE_CMD, function()
-    runShellCommand()
+local loopRunning, currentTimer = false, nil
 
-    doAfterKeepRef(WAIT_BEFORE_PROMPT, function()
-      focusVSCode()
-      if clickCopilotInput() then
-        sendPrompt()
-      end
-    end)
-
-    doAfterKeepRef(WAIT_BEFORE_PROMPT + WAIT_BEFORE_KEEP, function()
-      focusVSCode()
-      if not clickKeepButton() then
-        say("Keep click failed (point missing?)")
-      end
-    end)
-  end)
-end
-
--- ===== Loop controller =====
-local function startLoop()
-  if loopTimer then
-    note("Already running","Automation loop is already active.")
-    say("Loop already running")
-    return
-  end
-  say("Starting automation loop")
-  runCycle()
-  loopTimer = hs.timer.doEvery(LOOP_SECONDS, runCycle)
-  note("Started","Repeating every "..tostring(LOOP_SECONDS).."s. Press ⌃⌥⌘E to stop.")
+local function cancelTimer()
+  if currentTimer then currentTimer:stop(); currentTimer = nil end
 end
 
 local function stopLoop()
-  if loopTimer then
-    loopTimer:stop()
-    loopTimer = nil
-    say("Stopped automation loop")
-    note("Stopped","Automation loop stopped.")
-  else
-    note("Not running","No loop to stop.")
-  end
+  loopRunning = false
+  cancelTimer()
+  if currentBuildTask then currentBuildTask:terminate(); currentBuildTask = nil end
+  notify("Loop: STOPPED")
 end
 
--- ===== Hotkeys =====
-hs.hotkey.bind({"ctrl","alt","cmd"}, "P", function()
-  local pt = hs.mouse.absolutePosition()
-  hs.settings.set("copilotInputPoint", pt)
-  say("Saved Copilot input position")
-  note("Saved Copilot input", string.format("x=%.0f, y=%.0f", pt.x, pt.y))
-end)
+local function schedule(delay, fn)
+  cancelTimer()
+  currentTimer = hs.timer.doAfter(delay, function()
+    currentTimer = nil
+    fn()
+  end)
+end
 
-hs.hotkey.bind({"ctrl","alt","cmd"}, "K", function()
-  local pt = hs.mouse.absolutePosition()
-  hs.settings.set("keepButtonPoint", pt)
-  say("Saved Keep button position")
-  note("Saved Keep button", string.format("x=%.0f, y=%.0f", pt.x, pt.y))
-end)
+local function doOneIteration(nextAction)
+  -- 1) run headless build (full log captured in build.log)
+  runHeadlessBuild(bash)
 
-hs.hotkey.bind({"ctrl","alt","cmd"}, "D", function()
-  local p1 = hs.settings.get("copilotInputPoint")
-  local p2 = hs.settings.get("keepButtonPoint")
-  say("Dumping saved points")
-  note("Saved points",
-       string.format("Copilot: %s\nKeep: %s",
-         p1 and string.format("x=%.0f y=%.0f", p1.x, p1.y) or "not set",
-         p2 and string.format("x=%.0f y=%.0f", p2.x, p2.y) or "not set"))
-end)
+  -- 2) wait COMMAND_DELAY_SEC, then click input and type
+  schedule(COMMAND_DELAY_SEC, function()
+    moveAndClick(positions.input)
+    typeText(PROMPT_TEXT)
 
-hs.hotkey.bind({"ctrl","alt","cmd"}, "T", function()
-  say("Running test cycle")
-  runCycle()
-  note("Test cycle","Ran one full cycle.")
-end)
+    -- 3) wait AFTER_MESSAGE_DELAY_SEC, then click second point
+    schedule(AFTER_MESSAGE_DELAY_SEC, function()
+      moveAndClick(positions.second)
 
-hs.hotkey.bind({"ctrl","alt","cmd"}, "S", startLoop)
-hs.hotkey.bind({"ctrl","alt","cmd"}, "E", stopLoop)
+      -- 4) small delay then loop
+      schedule(RESTART_DELAY_SEC, function()
+        if nextAction then nextAction() end
+      end)
+    end)
+  end)
+end
 
--- Click Keep now (isolation test)
-hs.hotkey.bind({"ctrl","alt","cmd"}, "G", function()
-  focusVSCode()
-  if not clickKeepButton() then
-    note("Keep test","Keep button not set or not visible.")
+local function startLoop()
+  if not ensurePositions() then return end
+  if loopRunning then notify("Loop already running"); return end
+  loopRunning = true
+  notify("Loop: STARTED")
+  local function iterate()
+    if not loopRunning then return end
+    doOneIteration(iterate)
   end
+  iterate()
+end
+
+local function testOnce()
+  if not ensurePositions() then return end
+  notify("Test: single iteration")
+  doOneIteration(function() notify("Test: done") end)
+end
+
+----------------------------------------------------------------------
+-- HOTKEYS
+----------------------------------------------------------------------
+
+-- Set chat input position
+hs.hotkey.bind({"alt","cmd"}, "P", function()
+  positions.input = hs.mouse.getAbsolutePosition()
+  savePoint(POS_KEYS.input, positions.input)
+  notify(("Set chat input: %.0f,%.0f"):format(positions.input.x, positions.input.y))
 end)
 
-note("Hammerspoon ready",
-     "Hotkeys: P save Copilot, K save Keep, D dump, T test cycle, S start, E stop, G Keep now.")
-say("Hammerspoon ready")
+-- Set second click position
+hs.hotkey.bind({"alt","cmd"}, "O", function()
+  positions.second = hs.mouse.getAbsolutePosition()
+  savePoint(POS_KEYS.second, positions.second)
+  notify(("Set second spot: %.0f,%.0f"):format(positions.second.x, positions.second.y))
+end)
 
+-- Start/stop/test
+hs.hotkey.bind({"alt","cmd"}, "L", startLoop)
+hs.hotkey.bind({"alt","cmd"}, "K", stopLoop)
+hs.hotkey.bind({"alt","cmd"}, "T", testOnce)
+
+----------------------------------------------------------------------
+-- SAFETY ON RELOAD/EXIT
+----------------------------------------------------------------------
+
+hs.shutdownCallback = function() stopLoop() end

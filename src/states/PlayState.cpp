@@ -219,8 +219,7 @@ void PlayState::update(sf::Time dt) {
     // if player confirms while awaiting hidden realm, switch states
     if (hiddenRealmActive && game.input().wasKeyPressed(sf::Keyboard::Key::E)) {
         std::cerr << "Player confirmed entering hidden realm. Switching state...\n";
-        // push hidden realm state
-        game.setState(std::make_unique<HiddenRealmState>(game));
+        game.pushTemporaryState(std::make_unique<HiddenRealmState>(game));
         return; // Stop further world updates; new state takes over
     }
 

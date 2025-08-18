@@ -3,10 +3,8 @@
 #include "../states/PlayState.h"
 #include "../resources/ResourceManager.h"
 #include "../input/InputManager.h"
-#include "../systems/SoundManager.h"
 #include <variant>
 #include <type_traits>
-#include <SFML/Config.hpp>
 
 // helper to build an overloaded lambda for visitors
 template<class... Ts> struct overloaded : Ts... { using Ts::operator()...; };
@@ -18,7 +16,6 @@ Game::Game()
 {
     resourceManager = std::make_unique<ResourceManager>();
     inputManager = std::make_unique<InputManager>();
-    soundManager = std::make_unique<SoundManager>();
     currentState = std::make_unique<PlayState>(*this);
     window.setFramerateLimit(60);
 }
@@ -30,6 +27,12 @@ template<typename T, typename = void>
 struct has_event_type_member : std::false_type {};
 template<typename T>
 struct has_event_type_member<T, std::void_t<decltype(std::declval<const T&>().type)>> : std::true_type {};
+
+// detection: is `event == sf::Event::Closed{}` well-formed?
+template<typename T, typename U, typename = void>
+struct has_equality_with : std::false_type {};
+template<typename T, typename U>
+struct has_equality_with<T, U, std::void_t<decltype(std::declval<const T&>() == std::declval<const U&>())>> : std::true_type {};
 
 void Game::run() {
     sf::Clock clock;
@@ -52,16 +55,6 @@ void Game::processEvents() {
     while (optEvent.has_value()) {
         const sf::Event& event = *optEvent;
 
-        // Handle window close for SFML2 which exposes event.type and sf::Event::Closed.
-#if defined(SFML_VERSION_MAJOR) && (SFML_VERSION_MAJOR < 3)
-        if (event.type == sf::Event::Closed) {
-            window.close();
-            return;
-        }
-#endif
-
-        // For SFML3, the header layout differs; fall back to Escape key handling in update().
-
         // Forward events to current state (InputManager is sampled per-frame in update).
         if (currentState) currentState->handleEvent(event);
 
@@ -72,12 +65,6 @@ void Game::processEvents() {
 void Game::update(sf::Time dt) {
     // sample current keyboard state so entities can query input during update
     inputManager->poll();
-
-    // Allow Escape to close the window (safe, immediate shutdown)
-    if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Escape)) {
-        window.close();
-        return;
-    }
 
     if (currentState) currentState->update(dt);
 }
@@ -90,5 +77,6 @@ void Game::render() {
 
 ResourceManager& Game::resources() { return *resourceManager; }
 InputManager& Game::input() { return *inputManager; }
-SoundManager& Game::sound() { return *soundManager; }
 void Game::setState(std::unique_ptr<State> s) { currentState = std::move(s); }
+void Game::pushTemporaryState(std::unique_ptr<State> s) { savedState = std::move(currentState); currentState = std::move(s); }
+void Game::popTemporaryState() { if (savedState) { currentState = std::move(savedState); } }

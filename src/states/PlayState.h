@@ -3,16 +3,15 @@
 #include <vector>
 #include <memory>
 #include <SFML/Graphics.hpp>
-
-// include concrete entity headers so PlayState's members are complete types
-#include "../entities/Entity.h"
-#include "../entities/Player.h"
 #include "../world/TileMap.h"
 #include "../systems/Dialog.h"
-#include "../ui/InventoryUI.h"
-#include "../tools/RailTool.h"
+#include "../entities/Player.h"
+#include "../ui/InventoryUI.h" // added for complete type
+#include "../tools/RailTool.h"  // added for complete type
 
 class Game;
+class Projectile;
+class Altar;
 
 class PlayState : public State {
 public:
@@ -20,50 +19,30 @@ public:
     void handleEvent(const sf::Event&) override;
     void update(sf::Time) override;
     void draw() override;
-
-    // save/load hooks
-    void saveGame(const std::string& path);
-    void loadGame(const std::string& path);
 private:
     Game& game;
     std::unique_ptr<Player> player;
     std::vector<std::unique_ptr<Entity>> entities;
+    std::vector<std::unique_ptr<Entity>> worldProjectiles;
     sf::View view;
     TileMap map;
-    void handleInteractions();
-    // helpers
-    bool tryMovePlayer(const sf::Vector2f& desired);
 
-    // dialog system
-    DialogManager dialog;
-
-    // UI
+    // UI & tools
     std::unique_ptr<InventoryUI> inventoryUI;
-
-    // tools
     std::unique_ptr<RailTool> railTool;
 
-    // synchronize Rail entities with TileMap state
-    void syncRailsWithMap();
-
-    // world projectiles
-    std::vector<std::unique_ptr<Entity>> worldProjectiles;
-
-    // spawn a projectile in the world (added by player or NPCs)
-    void spawnProjectile(std::unique_ptr<Entity> p);
-
-    // death / respawn handling
+    // Respawn mechanics
+    sf::Vector2f respawnPos;
     bool playerDead = false;
     float respawnTimer = 0.f;
-    float respawnDelay = 3.f; // seconds until respawn
-    sf::Vector2f respawnPos;
+    float respawnDelay = 3.f;
 
-    // hidden realm (transcendence) mode
+    // Hidden realm
     bool hiddenRealmActive = false;
-    nlohmann::json savedMapJson;
-    std::vector<std::unique_ptr<Entity>> savedEntities;
-    sf::Vector2f savedPlayerPos;
 
-    void enterHiddenRealm();
-    void exitHiddenRealm();
+    bool tryMovePlayer(const sf::Vector2f& desired);
+    void syncRailsWithMap();
+    void spawnProjectile(std::unique_ptr<Entity> p);
+
+    DialogManager dialog;
 };
