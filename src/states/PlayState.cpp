@@ -55,6 +55,9 @@ PlayState::PlayState(Game& g)
     player->setPosition({ startTx * (float)ts + ts * 0.5f, startTy * (float)ts + ts * 0.5f });
     std::cerr << "Player positioned near soil at tile " << startTx << "," << startTy << " and given 10 seeds\n";
 
+    // remember respawn position
+    respawnPos = player->position();
+
     // now that player exists, create inventoryUI with player's inventory reference
     inventoryUI = std::make_unique<InventoryUI>(game.resources(), player->inventory());
     entities.push_back(std::make_unique<NPC>(game.resources(), sf::Vector2f(700.f, 380.f)));
@@ -129,6 +132,26 @@ void PlayState::update(sf::Time dt) {
         return;
     }
 
+    // if player is dead, run respawn timer and skip world updates until respawn
+    if (!playerDead && player && player->isDead()) {
+        playerDead = true;
+        respawnTimer = respawnDelay;
+        std::cerr << "Player died — respawning in " << respawnDelay << "s\n";
+    }
+    if (playerDead) {
+        respawnTimer -= dt.asSeconds();
+        if (respawnTimer <= 0.f) {
+            if (player) {
+                player->healToFull();
+                player->setPosition(respawnPos);
+            }
+            playerDead = false;
+            std::cerr << "Player respawned at " << respawnPos.x << "," << respawnPos.y << "\n";
+        }
+        game.input().clearFrame();
+        return;
+    }
+
     // toggle inventory UI
     if (game.input().wasKeyPressed(sf::Keyboard::Key::I)) {
         if (inventoryUI) inventoryUI->toggle();
@@ -149,6 +172,14 @@ void PlayState::update(sf::Time dt) {
     // process input into player (sets vel & flags)
     player->update(dt);
 
+    // transfer any projectiles spawned by player into the world projectiles list
+    if (!player->projectiles.empty()) {
+        for (auto &pp : player->projectiles) {
+            worldProjectiles.push_back(std::move(pp));
+        }
+        player->projectiles.clear();
+    }
+
     // compute desired movement and attempt collision-aware moves
     sf::Vector2f desired = player->computeDesiredMove(dt);
     tryMovePlayer(desired);
@@ -158,7 +189,7 @@ void PlayState::update(sf::Time dt) {
     // update projectiles
     for (auto& p : worldProjectiles) p->update(dt);
 
-    // projectile collisions vs hostile NPCs: projectile kills hostile NPCs on impact
+    // projectile collisions vs hostile NPCs: projectile hits hostile NPCs
     for (auto& p : worldProjectiles) {
         auto proj = dynamic_cast<Projectile*>(p.get());
         if (!proj) continue;
@@ -172,9 +203,14 @@ void PlayState::update(sf::Time dt) {
                                  pb.position.y + pb.size.y <= hb.position.y ||
                                  hb.position.y + hb.size.y <= pb.position.y);
                 if (overlap) {
-                    // destroy the hostile NPC and the projectile
-                    entities.erase(entities.begin() + i);
+                    // apply damage to hostile NPC
+                    hn->takeDamage(5.f);
+                    // destroy the projectile
                     proj->kill();
+                    // if NPC is dead, remove it
+                    if (hn->isDead()) {
+                        entities.erase(entities.begin() + i);
+                    }
                     break;
                 }
             }
@@ -198,6 +234,7 @@ void PlayState::update(sf::Time dt) {
         float len = std::sqrt(dir.x*dir.x + dir.y*dir.y);
         if (len > 1e-6f) {
             dir /= len;
+            // spawn projectile from player into world projectiles so collisions are handled
             spawnProjectile(std::make_unique<Projectile>(player->position(), dir * 300.f));
         }
     }
@@ -352,6 +389,50 @@ void PlayState::draw() {
 
     // draw inventory UI last
     if (inventoryUI) inventoryUI->draw(win);
+
+    // draw a simple HUD (player health) in screen space using the default view
+    {
+        // save current view and switch to default (screen) space
+        sf::View prev = win.getView();
+        win.setView(win.getDefaultView());
+
+        float margin = 10.f;
+        float barW = 200.f;
+        float barH = 14.f;
+        sf::Vector2f barPos(margin, margin);
+
+        float health = player ? player->getHealth() : 0.f;
+        float maxHealth = player ? player->getMaxHealth() : 1.f;
+        float frac = (maxHealth > 0.f) ? (health / maxHealth) : 0.f;
+        frac = std::max(0.f, std::min(1.f, frac));
+
+        sf::RectangleShape bg(sf::Vector2f(barW, barH));
+        bg.setPosition(barPos);
+        bg.setFillColor(sf::Color(30,30,30,200));
+        bg.setOutlineColor(sf::Color::Black);
+        bg.setOutlineThickness(1.f);
+        win.draw(bg);
+
+        sf::RectangleShape fg(sf::Vector2f(barW * frac, barH));
+        fg.setPosition(barPos);
+        fg.setFillColor(sf::Color(200,40,40));
+        win.draw(fg);
+
+        // optional health text if font available
+        try {
+            auto &f = game.resources().font("assets/fonts/arial.ttf");
+            std::string healthStr = std::to_string((int)health) + " / " + std::to_string((int)maxHealth);
+            sf::Text txt(f, healthStr, 12u); // SFML Text requires a Font at construction
+            txt.setFillColor(sf::Color::White);
+            txt.setPosition(sf::Vector2f(barPos.x + barW + 8.f, barPos.y - 2.f));
+            win.draw(txt);
+        } catch (...) {
+            // font missing: silent
+        }
+
+        // restore world view
+        win.setView(prev);
+    }
 }
 
 void PlayState::saveGame(const std::string& path) {

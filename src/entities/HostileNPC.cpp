@@ -46,13 +46,10 @@ void HostileNPC::update(sf::Time dt) {
         if (attackTimer <= 0.f) {
             attackTimer = attackCooldown;
             std::cerr << "HostileNPC attacks player!\n";
-            // rudimentary damage: try removing an item from player inventory (if any)
-            if (!playerTarget->inventory().items().empty()) {
-                auto it = playerTarget->inventory().items().front();
-                if (it) {
-                    playerTarget->inventory().removeItemById(it->id, 1);
-                    std::cerr << "HostileNPC destroyed one " << it->id << " from player inventory.\n";
-                }
+            // apply damage to the player health instead of removing inventory items
+            if (playerTarget) {
+                playerTarget->takeDamage(2.f);
+                std::cerr << "HostileNPC dealt 2 damage to player.\n";
             }
         }
     }
@@ -60,4 +57,12 @@ void HostileNPC::update(sf::Time dt) {
 
 void HostileNPC::interact(Entity* by) {
     // hostile NPC will not engage in dialog; allow attack to be provoked
+}
+
+void HostileNPC::takeDamage(float amount) {
+    health -= amount;
+    std::cerr << "HostileNPC took " << amount << " damage. health=" << health << "/" << maxHealth << "\n";
+    if (health <= 0.f) {
+        std::cerr << "HostileNPC died.\n";
+    }
 }

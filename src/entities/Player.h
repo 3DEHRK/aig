@@ -32,6 +32,13 @@ public:
 
     // fire a projectile in a direction (normalized)
     void fireProjectile(const sf::Vector2f& dir);
+
+    // health API
+    void takeDamage(float amount);
+    bool isDead() const { return health <= 0.f; }
+    float getHealth() const { return health; }
+    float getMaxHealth() const { return maxHealth; }
+    void healToFull() { health = maxHealth; }
 private:
     sf::Sprite sprite;
     float speed;
@@ -39,4 +46,6 @@ private:
     InputManager& input;
     Inventory inv; // player's inventory
     bool interactPressed = false;
+    float maxHealth = 10.f;
+    float health = 10.f;
 };

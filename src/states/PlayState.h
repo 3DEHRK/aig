@@ -51,4 +51,10 @@ private:
 
     // spawn a projectile in the world (added by player or NPCs)
     void spawnProjectile(std::unique_ptr<Entity> p);
+
+    // death / respawn handling
+    bool playerDead = false;
+    float respawnTimer = 0.f;
+    float respawnDelay = 3.f; // seconds until respawn
+    sf::Vector2f respawnPos;
 };

@@ -4,6 +4,7 @@
 #include "ItemEntity.h"
 #include "Projectile.h"
 #include <SFML/Config.hpp>
+#include <iostream>
 
 // helper: get size of FloatRect in a SFML-version-safe way
 static sf::Vector2f rect_size(const sf::FloatRect& r) {
@@ -16,7 +17,7 @@ static sf::Vector2f rect_size(const sf::FloatRect& r) {
 
 Player::Player(InputManager& inputMgr, ResourceManager& resources)
 : sprite(resources.texture("assets/textures/entities/player_idle.png"))
-, speed(200.f), input(inputMgr), inv(32)
+, speed(200.f), input(inputMgr), inv(32), health(100.f), maxHealth(100.f)
 {
     // scale sprite to a sensible pixel size (approx 36px width), but clamp scales to avoid huge textures
     const float targetPixelWidth = 36.f; // increased for slightly larger player
@@ -86,6 +87,12 @@ void Player::fireProjectile(const sf::Vector2f& dir) {
     sf::Vector2f pos = sprite.getPosition();
     sf::Vector2f vel = nd * 300.f; // projectile speed
     projectiles.push_back(std::make_unique<Projectile>(pos, vel));
+}
+
+void Player::takeDamage(float amount) {
+    health -= amount;
+    if (health < 0.f) health = 0.f;
+    std::cerr << "Player took " << amount << " damage. health=" << health << "/" << maxHealth << "\n";
 }
 
 bool Player::wantsToInteract() const { return interactPressed; }

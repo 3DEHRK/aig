@@ -6,6 +6,26 @@
 
 🎨🌟 ✦ ✧ ✺ ✹ ✶  Let's make code lovely ✶ ✹ ✺ ✧ ✦ 🌟🎨
 
+```text
+               _..-----._
+            .-"  _..._   `-.
+          .'  .-"     `-.   `.
+         /   /  .-"""-.  \    \
+        ;   ;  /  .-.  \  ;    ;
+        |   | |  (   )  | |    |
+        ;   ;  \  `-'  /  ;    ;
+         \   \  `.___.'  /    /
+          `.  `-.___..-'   .'
+            `-.        .-'
+               `"----"`
+
+       _/\_/\    _  _    _/\_/\
+      ( o.o )  ( \/ )  ( o.o )
+       > ^ <    `--'    > ^ <
+
+   ~  A little farm at the edge of the otherworld  ~
+```
+
 ⎯⎯⎯⎯⎯⎯⎯  Project Palette  ⎯⎯⎯⎯⎯⎯⎯
 🟩 Grass  🟫 Dirt/Soil  ⬜ Tile  🟦 Water  🟨 Crop  🟥 Enemy
 
@@ -247,3 +267,9 @@ Arbeitsablauf
 - Nach Abschluss aller angeforderten Punkte schlage ich zusätzliche Entwicklungs‑/Polish‑Ideen vor und kann diese in die Liste aufnehmen.
 
 Wenn du bereit bist, sende die erfolgreiche Build-Ausgabe und ich beginne mit Punkt 3 oder ich implementiere Punkt 3 direkt if you prefer.
+
+---
+
+## Wise words
+
+> "Ship small, iterate often. The best features are discovered while playing."
