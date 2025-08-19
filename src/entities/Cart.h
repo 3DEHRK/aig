@@ -5,6 +5,7 @@
 #include "../items/Item.h"
 class TileMap;
 class ResourceManager;
+class Player; // forward declare for riding
 
 class Cart : public Entity {
 public:
@@ -17,6 +18,7 @@ public:
     void setSpeed(float s) { speed = s; }
     void setLoop(bool v) { loopPath = v; }
     bool isLoop() const { return loopPath; } // added getter for persistence
+    // add waypoint only if placed on rail and reachable from previous waypoint via continuous rail path
     void addWaypoint(const sf::Vector2u& tile);
     void clearWaypoints() { waypoints.clear(); current = 0; }
     const std::vector<sf::Vector2u>& getWaypoints() const { return waypoints; }
@@ -33,6 +35,12 @@ public:
     }
     size_t itemsCount() const { return contents.size(); }
     size_t maxCapacity() const { return capacity; }
+    // riding API
+    bool hasRider() const { return rider != nullptr; }
+    Player* getRider() const { return rider; }
+    void mount(Player* p);
+    void dismount();
+    sf::Vector2f worldPosition() const { return body.getPosition(); }
 private:
     const TileMap* map = nullptr;
     std::vector<sf::Vector2u> waypoints;
@@ -40,9 +48,11 @@ private:
     float speed = 60.f;
     bool loopPath = true;
     sf::RectangleShape body;
+    sf::Sprite sprite; // textured cart sprite
     sf::Vector2f targetPos;
     void advanceWaypoint();
     // simple inventory
     std::vector<ItemPtr> contents;
     size_t capacity = 16;
+    Player* rider = nullptr; // current rider (Player) if mounted
 };

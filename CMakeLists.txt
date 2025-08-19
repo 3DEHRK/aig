@@ -45,4 +45,11 @@ foreach(tgt IN ITEMS sfml-game-framework sfml-game-framework-headless)
     set_target_properties(${tgt} PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
     )
+    # Copy assets & data after build
+    add_custom_command(TARGET ${tgt} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+                ${CMAKE_SOURCE_DIR}/assets $<TARGET_FILE_DIR:${tgt}>/assets)
+    add_custom_command(TARGET ${tgt} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+                ${CMAKE_SOURCE_DIR}/data $<TARGET_FILE_DIR:${tgt}>/data)
 endforeach()

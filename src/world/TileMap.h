@@ -2,6 +2,7 @@
 #include <vector>
 #include <SFML/Graphics.hpp>
 #include <nlohmann/json.hpp>
+class ResourceManager; // forward declare for texture access
 
 class TileMap {
 public:
@@ -58,6 +59,8 @@ public:
     bool railHasWest(unsigned tx, unsigned ty) const { return (railBits(tx,ty) & 8)!=0; }
     std::vector<sf::Vector2i> railExitOffsets(unsigned tx, unsigned ty) const;
 
+    void setRailTexture(ResourceManager& res, const std::string& path); // new
+
 private:
     void updateRailConnections(unsigned tx, unsigned ty); // recompute this rail & neighbor rails
     bool inBounds(unsigned tx, unsigned ty) const { return tx < w && ty < h; }
@@ -71,4 +74,5 @@ private:
     float soilMoistureDecay = 0.02f; // per second toward target when above
     float soilFertilityTarget = 0.5f;
     float soilFertilityRegen = 0.005f; // per second when below target
+    sf::Texture* railTexture = nullptr; // texture for rail tiles
 };

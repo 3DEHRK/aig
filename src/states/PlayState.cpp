@@ -42,6 +42,7 @@ PlayState::PlayState(Game& g)
 : game(g), view(g.getWindow().getDefaultView()), map(50, 30, 32)
 {
     map.generateTestMap();
+    map.setRailTexture(game.resources(), "assets/textures/entities/tiles/rail.png");
     if (auto *tj = g_getTunablesJson()) {
         if ((*tj).contains("soil")) {
             auto &sj = (*tj)["soil"];
@@ -55,7 +56,7 @@ PlayState::PlayState(Game& g)
         dialog.setFont(std::shared_ptr<sf::Font>(&f, [](sf::Font*){}));
     } catch (...) {}
 
-    player = std::make_unique<Player>(game.input());
+    player = std::make_unique<Player>(game.input(), game.resources());
     respawnPos = player->position();
     // give the player some sample seeds for testing — start with more seeds for reliable testing
     for (int i = 0; i < 5; ++i) {
@@ -296,6 +297,9 @@ void PlayState::update(sf::Time dt) {
 
     // process input into player (sets vel & flags)
     player->update(dt);
+    // If player is riding a cart, override their movement to zero (cart carries them)
+    bool playerRiding = false;
+    for (auto &c : carts) { if (c->hasRider() && c->getRider() == player.get()) { playerRiding = true; break; } }
     // Planting attempt on Interact if no entity targeted will be processed after click logic using attemptPlanting
     timeSinceLastProjectile += dt.asSeconds();
     // fire projectile using action mapping (ensure block closed properly)
@@ -346,6 +350,7 @@ void PlayState::update(sf::Time dt) {
 
     // compute desired movement and attempt collision-aware moves
     sf::Vector2f desired = player->computeDesiredMove(dt);
+    if (playerRiding) desired = {0.f,0.f}; // movement suppressed while riding
     tryMovePlayer(desired);
     // update camera center to follow player
     view.setCenter(player->position());
@@ -504,7 +509,8 @@ void PlayState::update(sf::Time dt) {
     bool rightClick = game.input().wasMousePressed(sf::Mouse::Button::Right);
     sf::Vector2i pixelPos = sf::Mouse::getPosition(game.getWindow());
     sf::Vector2f worldPos = game.getWindow().mapPixelToCoords(pixelPos, view);
-    bool interactPressed = game.input().actionPressed("Interact");
+    // NOTE: use player's cached interact flag (Player::update already consumed actionPressed)
+    bool interactPressed = player->wantsToInteract();
     bool plantedThisFrame = false;
 
     // cart route editing interactions
@@ -539,9 +545,32 @@ void PlayState::update(sf::Time dt) {
                 if (ty+1<map.height()) map.addWater(tx,ty+1,0.1f);
             } else if (map.isTilePlantable(tx,ty)) map.addWater(tx,ty,0.25f);
         }
-        // planting: Interact with no entity target & have seed & tile plantable
+        // planting / interaction: Interact key now prioritizes nearby cart/entity, not mouse hover
         if (interactPressed) {
-            attemptPlanting(worldPos);
+            // Determine if player is already riding
+            bool playerRidingNow = false; Cart* ridingCart = nullptr;
+            for (auto &c : carts) if (c->getRider() == player.get()) { playerRidingNow = true; ridingCart = c.get(); break; }
+            // Player bounds for proximity checks
+            sf::FloatRect pb = player->getBounds();
+            const float proxExpand = 12.f; // allow small tolerance
+            pb.position.x -= proxExpand; pb.position.y -= proxExpand; pb.size.x += proxExpand*2.f; pb.size.y += proxExpand*2.f;
+            auto overlaps = [](const sf::FloatRect& A, const sf::FloatRect& B){
+                return !(A.position.x + A.size.x < B.position.x ||
+                         B.position.x + B.size.x < A.position.x ||
+                         A.position.y + A.size.y < B.position.y ||
+                         B.position.y + B.size.y < A.position.y);
+            };
+            bool handled = false;
+            if (playerRidingNow && ridingCart) { ridingCart->dismount(); handled = true; }
+            else {
+                for (auto &c : carts) { if (overlaps(pb, c->getBounds())) { c->interact(player.get()); handled = true; break; } }
+                if (!handled) {
+                    for (auto &e : entities) { if (overlaps(pb, e->getBounds())) { e->interact(player.get()); handled = true; break; } }
+                }
+            }
+            if (!handled) { attemptPlanting(worldPos); }
+            // reset interact so we don't process again this frame
+            player->resetInteract();
         }
         // fertilize: press F to boost fertility on player tile (prototype)
         if (game.input().actionPressed("Fertilize")) {
@@ -678,9 +707,9 @@ void PlayState::draw() {
     win.setView(view);
     // world layers
     map.draw(win, showRailOverlay);
-    if (player) player->draw(win);
     for (auto &e : entities) e->draw(win);
     for (auto &c : carts) c->draw(win);
+    if (player) player->draw(win); // moved after carts
     for (auto &p : worldProjectiles) p->draw(win);
     if (moistureOverlay) map.drawMoistureOverlay(win);
     if (fertilityOverlay) map.drawFertilityOverlay(win);

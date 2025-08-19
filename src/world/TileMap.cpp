@@ -4,6 +4,7 @@
 #include <type_traits>
 #include <cstdint>
 #include <nlohmann/json.hpp>
+#include "../resources/ResourceManager.h" // for setRailTexture implementation
 
 TileMap::TileMap(unsigned width, unsigned height, unsigned tileSize)
 : w(width), h(height), ts(tileSize), tiles(w*h, Empty), soilMoisture(w*h, 0.5f), soilFertility(w*h,0.6f), explored(), railMeta(w*h,0) {}
@@ -67,21 +68,41 @@ void TileMap::updateRailConnections(unsigned tx, unsigned ty) {
 }
 
 void TileMap::draw(sf::RenderWindow& window, bool showRailOverlay) {
-    sf::RectangleShape r;
-    r.setSize({float(ts), float(ts)});
+    sf::RectangleShape r; r.setSize({float(ts), float(ts)});
     for (unsigned y = 0; y < h; ++y) {
         for (unsigned x = 0; x < w; ++x) {
             uint8_t t = tiles[x + y*w];
-            switch (t) {
-                case Empty: r.setFillColor(sf::Color(120,170,140)); break; // grass
-                case Solid: r.setFillColor(sf::Color(60,60,60)); break; // rock
-                case Plantable: {
-                    float fert = soilFertility[x + y*w];
-                    sf::Color base(150,110,60); sf::Color rich(180,140,90);
-                    auto lerp=[&](uint8_t a,uint8_t b){ return uint8_t(a + (b-a)*fert); };
-                    r.setFillColor(sf::Color(lerp(base.r,rich.r), lerp(base.g,rich.g), lerp(base.b,rich.b)));
-                } break;
-                case Rail: {
+            if (t != Rail) {
+                switch (t) {
+                    case Empty: r.setFillColor(sf::Color(120,170,140)); break; // grass
+                    case Solid: r.setFillColor(sf::Color(60,60,60)); break; // rock
+                    case Plantable: {
+                        float fert = soilFertility[x + y*w];
+                        sf::Color base(150,110,60); sf::Color rich(180,140,90);
+                        auto lerp=[&](uint8_t a,uint8_t b){ return uint8_t(a + (b-a)*fert); };
+                        r.setFillColor(sf::Color(lerp(base.r,rich.r), lerp(base.g,rich.g), lerp(base.b,rich.b)));
+                    } break;
+                    default: break;
+                }
+                r.setPosition(sf::Vector2f{float(x*ts), float(y*ts)});
+                window.draw(r);
+            } else {
+                if (railTexture) {
+                    uint8_t bits = railBits(x,y);
+                    sf::Sprite railSprite(*railTexture);
+                    railSprite.setOrigin({railTexture->getSize().x*0.5f, railTexture->getSize().y*0.5f});
+                    float scaleFactor = 0.95f; // nearly fill tile for visibility
+                    float sx = scaleFactor * (float)ts / railTexture->getSize().x;
+                    float sy = scaleFactor * (float)ts / railTexture->getSize().y;
+                    railSprite.setScale({sx, sy});
+                    bool horiz = (bits & 2) || (bits & 8); // east or west connection
+                    bool vert  = (bits & 1) || (bits & 4); // north or south connection
+                    // default texture faces up (north). If horizontal only (or stronger horizontal), rotate 90°.
+                    if (horiz && !vert) railSprite.setRotation(sf::degrees(90.f));
+                    railSprite.setPosition({x*ts + ts*0.5f, y*ts + ts*0.5f});
+                    window.draw(railSprite);
+                } else {
+                    // explicit fallback colored rect
                     uint8_t bits = railBits(x,y);
                     int cnt = ((bits&1)!=0)+((bits&2)!=0)+((bits&4)!=0)+((bits&8)!=0);
                     sf::Color base(100,80,40);
@@ -90,10 +111,10 @@ void TileMap::draw(sf::RenderWindow& window, bool showRailOverlay) {
                     else if (cnt==3) base = sf::Color(140,120,70);
                     else if (cnt==4) base = sf::Color(160,140,80);
                     r.setFillColor(base);
-                } break;
+                    r.setPosition(sf::Vector2f{float(x*ts), float(y*ts)});
+                    window.draw(r);
+                }
             }
-            r.setPosition(sf::Vector2f{float(x*ts), float(y*ts)});
-            window.draw(r);
             if (showRailOverlay && tiles[x + y*w] == Rail) {
                 uint8_t bits = railBits(x,y);
                 sf::Vector2f basePos(float(x*ts), float(y*ts));
@@ -334,4 +355,8 @@ std::vector<sf::Vector2i> TileMap::railExitOffsets(unsigned tx, unsigned ty) con
     if (b & 4) v.push_back({0,1});
     if (b & 8) v.push_back({-1,0});
     return v;
+}
+
+void TileMap::setRailTexture(ResourceManager& res, const std::string& path) {
+    railTexture = &res.texture(path);
 }

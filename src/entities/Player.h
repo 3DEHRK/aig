@@ -5,12 +5,13 @@
 #include <memory>
 #include "../input/InputManager.h"
 #include "../systems/Inventory.h"
+class ResourceManager; // forward declare
 
 class Projectile;
 
 class Player : public Entity {
 public:
-    Player(InputManager& input);
+    Player(InputManager& input, ResourceManager& resources);
     void update(sf::Time) override; // processes input and sets desired movement (but does not commit movement)
     void draw(sf::RenderWindow&) override;
     sf::FloatRect getBounds() const override;
@@ -67,4 +68,6 @@ private:
     float damageBase = 10.f; // projectile or melee base damage (tunable)
     float regenCurveExponent = 0.f; // 0 => constant rate, >0 scales with missing health^exponent
     float damageFlashTimer = 0.f;
+    sf::Sprite sprite; // player texture
+    float walkAnim = 0.f; // for walk animation
 };
