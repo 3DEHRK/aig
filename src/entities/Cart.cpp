@@ -87,8 +87,11 @@ void Cart::update(sf::Time dt) {
     }
     // orientation: rotate 90 deg for vertical movement (y-dominant)
     sf::Vector2f motion = targetPos - body.getPosition();
-    if (std::abs(motion.x) > std::abs(motion.y)) sprite.setRotation(sf::degrees(0.f));
-    else sprite.setRotation(sf::degrees(90.f));
+    if (std::abs(motion.x) > std::abs(motion.y)) { sprite.setRotation(sf::degrees(0.f)); }
+    else { sprite.setRotation(sf::degrees(90.f)); }
+    static int cartLogCounter = 0; if ((cartLogCounter++ % 60)==0) {
+        std::cerr << "[Cart] pos="<<body.getPosition().x<<","<<body.getPosition().y<<" target="<<targetPos.x<<","<<targetPos.y<<" rot="<<sprite.getRotation().asDegrees()<<" texSize="<<sprite.getTexture().getSize().x<<"x"<<sprite.getTexture().getSize().y<<"\n";
+    }
     sprite.setPosition(body.getPosition());
     if (contents.empty()) body.setFillColor(sf::Color(200,180,60)); else body.setFillColor(sf::Color(200,120,40));
 }

@@ -5,7 +5,8 @@
 
 sf::Texture& ResourceManager::texture(const std::string& path) {
     auto it = textures.find(path);
-    if (it != textures.end()) return *it->second;
+    if (it != textures.end()) { std::cerr << "[ResourceManager] Texture cache hit: " << path << "\n"; return *it->second; }
+    std::cerr << "[ResourceManager] Loading texture: " << path << "\n";
     auto tex = std::make_unique<sf::Texture>();
     if (!tex->loadFromFile(path)) {
         std::cerr << "[ResourceManager] Missing texture: " << path << " -> using fallback placeholder." << '\n';
@@ -19,6 +20,8 @@ sf::Texture& ResourceManager::texture(const std::string& path) {
         tex->create(4,4); tex->update(img);
 #endif
         tex->setRepeated(true);
+    } else {
+        std::cerr << "[ResourceManager] Loaded texture OK: " << path << " size=" << tex->getSize().x << "x" << tex->getSize().y << "\n";
     }
     tex->setSmooth(false);
     auto &ref = *tex;

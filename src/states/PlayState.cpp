@@ -42,6 +42,7 @@ PlayState::PlayState(Game& g)
 : game(g), view(g.getWindow().getDefaultView()), map(50, 30, 32)
 {
     map.generateTestMap();
+    std::cerr << "[PlayState] Setting rail texture path=assets/textures/entities/tiles/rail.png\n";
     map.setRailTexture(game.resources(), "assets/textures/entities/tiles/rail.png");
     if (auto *tj = g_getTunablesJson()) {
         if ((*tj).contains("soil")) {
@@ -57,6 +58,7 @@ PlayState::PlayState(Game& g)
     } catch (...) {}
 
     player = std::make_unique<Player>(game.input(), game.resources());
+    std::cerr << "[PlayState] Creating player with texture assets/textures/entities/player_idle.png\n";
     respawnPos = player->position();
     // give the player some sample seeds for testing — start with more seeds for reliable testing
     for (int i = 0; i < 5; ++i) {

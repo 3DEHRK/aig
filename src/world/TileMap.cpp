@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <nlohmann/json.hpp>
 #include "../resources/ResourceManager.h" // for setRailTexture implementation
+#include <iostream> // added for logging
 
 TileMap::TileMap(unsigned width, unsigned height, unsigned tileSize)
 : w(width), h(height), ts(tileSize), tiles(w*h, Empty), soilMoisture(w*h, 0.5f), soilFertility(w*h,0.6f), explored(), railMeta(w*h,0) {}
@@ -69,6 +70,7 @@ void TileMap::updateRailConnections(unsigned tx, unsigned ty) {
 
 void TileMap::draw(sf::RenderWindow& window, bool showRailOverlay) {
     sf::RectangleShape r; r.setSize({float(ts), float(ts)});
+    static int railDrawCount = 0;
     for (unsigned y = 0; y < h; ++y) {
         for (unsigned x = 0; x < w; ++x) {
             uint8_t t = tiles[x + y*w];
@@ -89,6 +91,7 @@ void TileMap::draw(sf::RenderWindow& window, bool showRailOverlay) {
             } else {
                 if (railTexture) {
                     uint8_t bits = railBits(x,y);
+                    if ((railDrawCount++ % 25) == 0) std::cerr << "[RailDraw] textured rail at ("<<x<<","<<y<<") bits="<<(int)bits<<" texSize="<<railTexture->getSize().x<<"x"<<railTexture->getSize().y<<"\n";
                     sf::Sprite railSprite(*railTexture);
                     railSprite.setOrigin({railTexture->getSize().x*0.5f, railTexture->getSize().y*0.5f});
                     float scaleFactor = 0.95f; // nearly fill tile for visibility
@@ -102,6 +105,7 @@ void TileMap::draw(sf::RenderWindow& window, bool showRailOverlay) {
                     railSprite.setPosition({x*ts + ts*0.5f, y*ts + ts*0.5f});
                     window.draw(railSprite);
                 } else {
+                    if ((railDrawCount++ % 25) == 0) std::cerr << "[RailDraw] fallback rail at ("<<x<<","<<y<<")\n";
                     // explicit fallback colored rect
                     uint8_t bits = railBits(x,y);
                     int cnt = ((bits&1)!=0)+((bits&2)!=0)+((bits&4)!=0)+((bits&8)!=0);
@@ -359,4 +363,10 @@ std::vector<sf::Vector2i> TileMap::railExitOffsets(unsigned tx, unsigned ty) con
 
 void TileMap::setRailTexture(ResourceManager& res, const std::string& path) {
     railTexture = &res.texture(path);
+    if (railTexture) {
+        auto sz = railTexture->getSize();
+        std::cerr << "Rail texture loaded: " << path << " size=" << sz.x << "x" << sz.y << "\n";
+    } else {
+        std::cerr << "Rail texture NOT set (null) for path: " << path << "\n";
+    }
 }
