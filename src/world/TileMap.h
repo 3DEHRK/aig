@@ -22,11 +22,13 @@ public:
     bool isTileRail(unsigned tx, unsigned ty) const { return inBounds(tx,ty) && tiles[tx + ty*w] == Rail; }
     Tile getTile(unsigned tx, unsigned ty) const { return inBounds(tx,ty) ? static_cast<Tile>(tiles[tx + ty*w]) : Solid; }
 
-    void setTile(unsigned tx, unsigned ty, Tile t) { if (inBounds(tx,ty)) tiles[tx + ty*w] = t; }
+    void setTile(unsigned tx, unsigned ty, Tile t); // now updates rail connections
+    uint8_t railBits(unsigned tx, unsigned ty) const { return (inBounds(tx,ty) && railMeta.size()==w*h) ? railMeta[tx + ty*w] : 0; }
+    // bit layout: 1=N,2=E,4=S,8=W
 
     // exploration (fog-of-war for minimap)
-    void markExplored(unsigned tx, unsigned ty) { if (inBounds(tx,ty)) explored[tx + ty*w] = 1; }
-    bool isExplored(unsigned tx, unsigned ty) const { return inBounds(tx,ty) && explored[tx + ty*w] != 0; }
+    void markExplored(unsigned tx, unsigned ty) { if (explored.empty()) explored.assign(w*h,0); if (inBounds(tx,ty)) explored[tx + ty*w] = 1; }
+    bool isExplored(unsigned tx, unsigned ty) const { return inBounds(tx,ty) && !explored.empty() && explored[tx + ty*w] != 0; }
 
     unsigned width() const { return w; }
     unsigned height() const { return h; }
@@ -40,29 +42,26 @@ public:
     void addWater(unsigned tx, unsigned ty, float amt);
     void addFertility(unsigned tx, unsigned ty, float amt);
     void adjustFertility(unsigned tx, unsigned ty, float delta) { if (inBounds(tx,ty)) { soilFertility[tx+ty*w] = std::max(0.f,std::min(1.f, soilFertility[tx+ty*w] + delta)); } }
+    void setSoilTunables(float moistureTarget, float moistureDecayPerSec, float fertilityTarget, float fertilityRegenPerSec) {
+        soilMoistureTarget = moistureTarget; soilMoistureDecay = moistureDecayPerSec; soilFertilityTarget = fertilityTarget; soilFertilityRegen = fertilityRegenPerSec; }
 
-    nlohmann::json toJson() const {
-        nlohmann::json j; j["w"]=w; j["h"]=h; j["ts"]=ts; j["tiles"]=tiles; j["soilMoisture"]=soilMoisture; j["soilFertility"]=soilFertility; j["explored"]=explored; return j; }
-    void fromJson(const nlohmann::json& j) {
-        if (!j.contains("w")||!j.contains("h")||!j.contains("ts")||!j.contains("tiles")) return;
-        w=j["w"].get<unsigned>(); h=j["h"].get<unsigned>(); ts=j["ts"].get<unsigned>(); tiles=j["tiles"].get<std::vector<uint8_t>>();
-        if (tiles.size()!=w*h) tiles.assign(w*h, Empty);
-        soilMoisture = (j.contains("soilMoisture")? j["soilMoisture"].get<std::vector<float>>() : std::vector<float>(w*h,0.5f));
-        soilFertility = (j.contains("soilFertility")? j["soilFertility"].get<std::vector<float>>() : std::vector<float>(w*h,0.5f));
-        if (soilMoisture.size()!=w*h) soilMoisture.assign(w*h,0.5f);
-        if (soilFertility.size()!=w*h) soilFertility.assign(w*h,0.5f);
-        explored = (j.contains("explored")? j["explored"].get<std::vector<uint8_t>>() : std::vector<uint8_t>(w*h,0));
-        if (explored.size()!=w*h) explored.assign(w*h,0);
-    }
+    nlohmann::json toJson() const; // defined in cpp
+    void fromJson(const nlohmann::json& j); // defined in cpp
+
+    float moistureAt(unsigned tx, unsigned ty) const { if (!inBounds(tx,ty)) return 0.f; return soilMoisture[tx + ty*w]; }
+    float fertilityAt(unsigned tx, unsigned ty) const { if (!inBounds(tx,ty)) return 0.f; return soilFertility[tx + ty*w]; }
 
 private:
+    void updateRailConnections(unsigned tx, unsigned ty); // recompute this rail & neighbor rails
     bool inBounds(unsigned tx, unsigned ty) const { return tx < w && ty < h; }
     unsigned w, h, ts;
     std::vector<uint8_t> tiles;
-
-    // Soil arrays
-    std::vector<float> soilMoisture; // 0..1
-    std::vector<float> soilFertility; // 0..1
-    // exploration array
-    std::vector<uint8_t> explored; // 0=unseen,1=seen
+    std::vector<float> soilMoisture;
+    std::vector<float> soilFertility;
+    std::vector<uint8_t> explored;
+    std::vector<uint8_t> railMeta; // parallel array storing connection bits for rails
+    float soilMoistureTarget = 0.3f;
+    float soilMoistureDecay = 0.02f; // per second toward target when above
+    float soilFertilityTarget = 0.5f;
+    float soilFertilityRegen = 0.005f; // per second when below target
 };

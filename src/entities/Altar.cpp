@@ -16,7 +16,14 @@ Altar::Altar(ResourceManager& resources, const sf::Vector2f& pos) {
 #endif
         sprite->setPosition(pos);
     } catch (const std::exception& e) {
-        std::cerr << "Failed to load altar texture: " << e.what() << "\n";
+        std::cerr << "Failed to load altar texture: " << e.what() << "\nUsing fallback shape." << "\n";
+        fallback = true;
+        fallbackShape.setSize({28.f, 28.f});
+        fallbackShape.setOrigin(fallbackShape.getSize()*0.5f);
+        fallbackShape.setPosition(pos);
+        fallbackShape.setFillColor(sf::Color(90,30,140,200));
+        fallbackShape.setOutlineColor(sf::Color(180,120,250,220));
+        fallbackShape.setOutlineThickness(2.f);
     }
 }
 
@@ -25,42 +32,27 @@ void Altar::update(sf::Time) {
 }
 
 void Altar::draw(sf::RenderWindow& win) {
-    if (sprite) win.draw(*sprite);
+    if (sprite) win.draw(*sprite); else if (fallback) win.draw(fallbackShape);
 }
 
 sf::FloatRect Altar::getBounds() const {
     if (sprite) return sprite->getGlobalBounds();
+    if (fallback) return fallbackShape.getGlobalBounds();
     return sf::FloatRect();
 }
 
-void Altar::setRequiredItems(const std::vector<std::string>& items) {
-    requiredItems = items;
-}
+void Altar::setRequiredItems(const std::vector<std::string>& items) { requiredItems = items; }
 
 void Altar::interact(Entity* by) {
-    if (active) {
-        std::cerr << "Altar already active." << "\n";
-        return; // already activated
-    }
-    auto player = dynamic_cast<Player*>(by);
-    if (!player) return;
-    // check inventory for required items
+    if (active) { std::cerr << "Altar already active." << "\n"; return; }
+    auto player = dynamic_cast<Player*>(by); if (!player) return;
     bool hasAll = true;
     for (auto &id : requiredItems) {
-        bool found = false;
-        for (auto &it : player->inventory().items()) {
-            if (it && it->id == id) { found = true; break; }
-        }
+        bool found = false; for (auto &it : player->inventory().items()) { if (it && it->id == id) { found = true; break; } }
         if (!found) { hasAll = false; break; }
     }
-    if (!hasAll) {
-        std::cerr << "Altar activation failed: missing required items." << "\n";
-        return;
-    }
-    // consume required items (simple remove one each)
-    for (auto &id : requiredItems) {
-        player->inventory().removeItemById(id, 1);
-    }
+    if (!hasAll) { std::cerr << "Altar activation failed: missing required items." << "\n"; return; }
+    for (auto &id : requiredItems) player->inventory().removeItemById(id, 1);
     active = true;
     std::cerr << "Altar activated! Portal opens. This spot can now be a respawn." << "\n";
 }

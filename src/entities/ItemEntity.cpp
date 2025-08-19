@@ -1,6 +1,5 @@
 #include "ItemEntity.h"
 #include "../entities/Player.h"
-#include "../systems/Quest.h"
 #include <iostream>
 
 ItemEntity::ItemEntity(ItemPtr item, const sf::Vector2f& pos)
@@ -23,16 +22,14 @@ void ItemEntity::draw(sf::RenderWindow& window) {
 sf::FloatRect ItemEntity::getBounds() const { return shape.getGlobalBounds(); }
 
 void ItemEntity::interact(Entity* other) {
+    // when player interacts, transfer item to player's inventory
     if (collected_) return;
     if (!other) return;
+    // attempt to find Player by dynamic_cast
     if (auto p = dynamic_cast<Player*>(other)) {
         if (p->inventory().addItem(item_)) {
             collected_ = true;
             std::cout << "Picked up: " << (item_ ? item_->name : "unknown") << "\n";
-            // notify global quest manager
-            // simple global helper in Quest.cpp (not yet created) will be used
-            extern QuestManager& getGlobalQuestManager();
-            getGlobalQuestManager().onItemCollected(item_ ? item_->id : "");
         } else {
             std::cout << "Inventory full, cannot pick up: " << (item_ ? item_->name : "unknown") << "\n";
         }

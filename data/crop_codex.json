@@ -1,0 +1,20 @@
+{
+  "crops": [
+    {
+      "id": "wheat",
+      "lines": [
+        "Wheat: A fast staple crop.",
+        "Prefers moderate moisture.",
+        "Low fertility drain (0.02)."
+      ]
+    },
+    {
+      "id": "herb",
+      "lines": [
+        "Herb: Slow aromatic plant.",
+        "Higher base growth time.",
+        "Fertility improves yield markedly."
+      ]
+    }
+  ]
+}

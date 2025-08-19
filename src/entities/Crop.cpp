@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <algorithm>
 
+extern nlohmann::json* g_getTunablesJson();
 static float growthFactor(const TileMap* map, unsigned tileX, unsigned tileY) {
     if (!map) return 1.f;
     float m = map->moisture(tileX,tileY);
@@ -12,11 +13,26 @@ static float growthFactor(const TileMap* map, unsigned tileX, unsigned tileY) {
     float mFactor = (m < 0.4f) ? (0.5f + 0.5f * (m/0.4f)) : (m <= 0.7f ? 1.f : (1.f - (m-0.7f)*0.6f));
     if (mFactor < 0.3f) mFactor = 0.3f;
     float fFactor = 0.4f + 0.6f * f;
-    return mFactor * fFactor;
+    float combined = mFactor * fFactor;
+    if (auto *tj = g_getTunablesJson()) {
+        if ((*tj).contains("farming")) {
+            auto &fj = (*tj)["farming"];
+            float moistureMul = fj.value("moisture_factor", 1.0f);
+            float fertilityMul = fj.value("fertility_factor", 1.0f);
+            combined = (mFactor * moistureMul) * (fFactor * fertilityMul);
+        }
+    }
+    return combined;
 }
 
 Crop::Crop(ResourceManager& /*resources*/, TileMap& map, const sf::Vector2f& pos, const std::string& cropId, int stages, float totalTime)
 : mapPtr(&map), id(cropId), maxStages(stages), totalGrowthTime(totalTime) {
+    if (auto *tj = g_getTunablesJson()) {
+        if ((*tj).contains("farming") && (*tj)["farming"].contains("base_growth_seconds")) {
+            auto &bg = (*tj)["farming"]["base_growth_seconds"];
+            if (bg.contains(id)) totalGrowthTime = bg[id].get<float>();
+        }
+    }
     shape.setSize({20.f,20.f});
     shape.setOrigin(shape.getSize()/2.f);
     shape.setFillColor(sf::Color(200,180,60));
@@ -29,6 +45,8 @@ void Crop::update(sf::Time dt) {
     if (harvested || withered) return;
     float baseRate = 1.f / totalGrowthTime;
     float factor = growthFactor(mapPtr, tileX, tileY);
+    // apply clamping so extreme multipliers (future) don’t exceed 4x early-game sanity
+    factor = std::min(factor, 4.f);
     if (mapPtr) {
         float m = mapPtr->moisture(tileX,tileY);
         if (m < 0.25f) droughtAccum += dt.asSeconds(); else droughtAccum = std::max(0.f, droughtAccum - dt.asSeconds()*0.5f);
@@ -40,13 +58,25 @@ void Crop::update(sf::Time dt) {
         }
     }
     growth += dt.asSeconds() * baseRate * factor * maxStages;
+    growth = std::min(growth, (float)maxStages); // cap
     int newStage = std::min(maxStages-1, (int)(growth / 1.f));
     if (newStage != currentStage) {
+        int old = currentStage;
         currentStage = newStage;
         sf::Color c = shape.getFillColor();
         c.r = (uint8_t)std::max(0, int(c.r) - 10);
         c.g = (uint8_t)std::max(0, int(c.g) - 5);
+        // scale size slightly with stage
+        float scale = 0.8f + (float)currentStage / std::max(1, maxStages-1) * 0.6f; // 0.8 .. 1.4
+        shape.setSize({baseSize.x * scale, baseSize.y * scale});
+        shape.setOrigin(shape.getSize()/2.f);
         shape.setFillColor(c);
+        // future: OnStageAdvance hook
+        if (currentStage == maxStages-1) {
+            // ready to harvest tint
+            c.g = (uint8_t)std::min(255, int(c.g) + 30);
+            shape.setFillColor(c);
+        }
     }
 }
 
@@ -57,9 +87,18 @@ sf::FloatRect Crop::getBounds() const { return shape.getGlobalBounds(); }
 void Crop::interact(Entity* /*by*/) {
     if (withered) { harvested = true; finished = true; return; }
     if (!harvested && currentStage == maxStages-1) {
+        // compute yield influenced by fertility
+        float fert = mapPtr ? mapPtr->fertility(tileX,tileY) : 0.5f;
+        float bonusScale = 2.f;
+        if (auto *tj = g_getTunablesJson()) {
+            if ((*tj).contains("farming")) bonusScale = (*tj)["farming"].value("yield_bonus_scale", 2.f);
+        }
+        float effective = 1.f + fert * bonusScale; // 1..(1+bonusScale)
+        yield = std::max(1, (int)std::round(effective));
         harvested = true; finished = true; shape.setFillColor(sf::Color(120,120,120));
         if (mapPtr) mapPtr->adjustFertility(tileX,tileY,-0.02f);
-        std::cerr << "Crop harvested: " << id << " at tile " << tileX << "," << tileY << "\n";
+        std::cerr << "Crop harvested: " << id << " at tile " << tileX << "," << tileY << " yield=" << yield << " fert=" << fert << "\n";
+        // TODO: integrate inventory drops; placeholder log only.
     }
 }
 

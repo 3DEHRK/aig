@@ -3,6 +3,7 @@
 #include <vector>
 #include <string>
 #include <memory>
+#include <nlohmann/json.hpp>
 
 class InputManager;
 
@@ -27,6 +28,8 @@ public:
     // optionally provide a font from your ResourceManager
     void setFont(const std::shared_ptr<sf::Font>& f);
 
+    nlohmann::json toJson() const; // serialize active state & remaining lines
+    void fromJson(const nlohmann::json& j); // restore dialog
 private:
     std::vector<std::string> lines;
     std::size_t index = 0;

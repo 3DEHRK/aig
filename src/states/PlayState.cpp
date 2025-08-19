@@ -22,6 +22,9 @@
 #include "../world/TileMap.h"
 #include "../entities/Projectile.h"
 #include <sstream>
+#include "../entities/Entity.h" // for resolveAxis helper
+#include <unordered_map>
+#include <random> // added for mt19937 and uniform_real_distribution
 
 // rect center for current SFML (uses position/size members)
 static sf::Vector2f rect_center(const sf::FloatRect& r) {
@@ -32,6 +35,12 @@ PlayState::PlayState(Game& g)
 : game(g), view(g.getWindow().getDefaultView()), map(50, 30, 32)
 {
     map.generateTestMap();
+    if (auto *tj = g_getTunablesJson()) {
+        if ((*tj).contains("soil")) {
+            auto &sj = (*tj)["soil"];
+            map.setSoilTunables(sj.value("moisture_target",0.3f), sj.value("moisture_decay_per_sec",0.02f), sj.value("fertility_target",0.5f), sj.value("fertility_regen_per_sec",0.005f));
+        }
+    }
 
     // try to set a font for dialog (user should place Arial at assets/fonts/arial.ttf)
     try {
@@ -43,7 +52,7 @@ PlayState::PlayState(Game& g)
     respawnPos = player->position();
     // give the player some sample seeds for testing — start with more seeds for reliable testing
     for (int i = 0; i < 5; ++i) {
-        player->inventory().addItem(std::make_shared<Item>("seed_wheat", "Wheat Seed", "Seed", 1, "assets/textures/items/seed_wheat.png"));
+        player->inventory().addItem(std::make_shared<Item>("seed_wheat", "Wheat Seed", "Seed", 1));
     }
 
     // now that player exists, create inventoryUI with player's inventory reference
@@ -70,6 +79,7 @@ PlayState::PlayState(Game& g)
 
     // spawn a hostile NPC targeting the player
     entities.push_back(std::make_unique<HostileNPC>(sf::Vector2f(400.f, 300.f), player.get()));
+    if (auto h = dynamic_cast<HostileNPC*>(entities.back().get())) h->setTileMap(&map);
 
     // add a hidden location test marker at tile (10,10)
     unsigned hx = 10, hy = 10;
@@ -84,6 +94,47 @@ PlayState::PlayState(Game& g)
 
     // initialize rail tool
     railTool = std::make_unique<RailTool>(game.resources(), map);
+
+    // load crop codex
+    try {
+        std::ifstream cs("data/crop_codex.json");
+        if (cs) { nlohmann::json cj; cs >> cj; if (cj.contains("crops")) {
+            for (auto &entry : cj["crops"]) {
+                if (entry.contains("id") && entry.contains("lines") && entry["lines"].is_array()) {
+                    std::vector<std::string> lines;
+                    for (auto &ln : entry["lines"]) lines.push_back(ln.get<std::string>());
+                    cropCodex[entry["id"].get<std::string>()] = lines;
+                }
+            }
+            codexEnabled = true;
+        }} // FIX: added missing brace to close outer 'if (cs)'
+    } catch(...) { }
+
+    // define simple hostile spawn zones (corners + center radius ring)
+    float W = map.worldSize().x; float H = map.worldSize().y;
+    hostileSpawnPoints = {
+        {64.f,64.f}, {W-64.f,64.f}, {64.f,H-64.f}, {W-64.f,H-64.f},
+        {W*0.5f,64.f}, {W*0.5f,H-64.f}, {64.f,H*0.5f}, {W-64.f,H*0.5f}
+    };
+
+    lastPlayerPos = player->position();
+
+    // Initialize farming onboarding demo plot (3 tiles near player spawn)
+    if (farmingDemoActive) {
+        unsigned tsz = map.tileSize();
+        sf::Vector2f p0 = player->position();
+        unsigned px = (unsigned)std::floor(p0.x / tsz);
+        unsigned py = (unsigned)std::floor(p0.y / tsz);
+        for (int ox=0; ox<3; ++ox) {
+            unsigned tx = px + ox + 1; unsigned ty = py + 1;
+            if (tx < map.width() && ty < map.height()) {
+                map.setTile(tx,ty, TileMap::Plantable);
+                farmingDemoTiles.push_back({tx,ty});
+            }
+        }
+        dialog.start({ "Welcome! Let's plant a crop.", "Press E near soil with a seed to plant." });
+        farmingDemoStage = 0;
+    }
 }
 
 void PlayState::handleEvent(const sf::Event& /*ev*/) {
@@ -91,36 +142,48 @@ void PlayState::handleEvent(const sf::Event& /*ev*/) {
 }
 
 bool PlayState::tryMovePlayer(const sf::Vector2f& desired) {
-    // axis-aligned resolution: separate X and Y moves
-    const sf::Vector2f ppos = player->position();
-    const sf::Vector2f psize = player->size();
-    const sf::Vector2f half = psize * 0.5f;
-
-    // try X
-    sf::Vector2f moveX{desired.x, 0.f};
-    sf::FloatRect trialX(
-        sf::Vector2f{ppos.x - half.x + moveX.x, ppos.y - half.y},
-        sf::Vector2f{psize.x, psize.y}
-    );
-    if (!map.isRectColliding(trialX)) {
-        player->applyMove(moveX);
-    }
-
-    // try Y
-    sf::Vector2f moveY{0.f, desired.y};
-    sf::FloatRect trialY(
-        sf::Vector2f{ppos.x - half.x, ppos.y - half.y + moveY.y},
-        sf::Vector2f{psize.x, psize.y}
-    );
-    if (!map.isRectColliding(trialY)) {
-        player->applyMove(moveY);
-        return true;
-    }
-
+    // Improved AABB vs tile collision using axis resolution and resolveAxis helper
+    if (!player) return false;
+    sf::FloatRect pb = player->getBounds();
+    auto sweepAxis = [&](float& move, bool horizontal){
+        if (move == 0.f) return;
+        sf::FloatRect b = player->getBounds();
+        // Expand query region to cover movement path
+        float minX = b.position.x + (horizontal? std::min(0.f, move) : 0.f);
+        float maxX = b.position.x + b.size.x + (horizontal? std::max(0.f, move) : 0.f);
+        float minY = b.position.y + (!horizontal? std::min(0.f, move) : 0.f);
+        float maxY = b.position.y + b.size.y + (!horizontal? std::max(0.f, move) : 0.f);
+        unsigned ts = map.tileSize();
+        int tx0 = std::max(0, (int)std::floor(minX / ts));
+        int tx1 = std::min((int)map.width()-1, (int)std::floor((maxX-0.0001f) / ts));
+        int ty0 = std::max(0, (int)std::floor(minY / ts));
+        int ty1 = std::min((int)map.height()-1, (int)std::floor((maxY-0.0001f) / ts));
+        float posMin = horizontal? b.position.x : b.position.y;
+        float posMax = horizontal? (b.position.x + b.size.x) : (b.position.y + b.size.y);
+        for (int ty = ty0; ty <= ty1; ++ty) {
+            for (int tx = tx0; tx <= tx1; ++tx) {
+                if (!map.isTileSolid(tx,ty)) continue;
+                sf::FloatRect tileRect({(float)tx*ts,(float)ty*ts},{(float)ts,(float)ts});
+                float blockMin = horizontal? tileRect.position.x : tileRect.position.y;
+                float blockMax = horizontal? (tileRect.position.x + tileRect.size.x) : (tileRect.position.y + tileRect.size.y);
+                float adjusted = resolveAxis(posMin, posMax, move, blockMin, blockMax);
+                if (std::abs(adjusted) < std::abs(move)) move = adjusted; // clamped
+                if (move == 0.f) return; // fully blocked
+            }
+        }
+    };
+    float mx = desired.x; float my = desired.y;
+    sweepAxis(mx, true);
+    player->applyMove({mx,0.f});
+    sweepAxis(my, false);
+    player->applyMove({0.f,my});
     return true;
 }
 
 void PlayState::update(sf::Time dt) {
+    // Global quit shortcut
+    if (game.input().actionPressed("Quit")) { game.getWindow().close(); return; }
+
     // if a dialog is active, update dialog and skip movement/interactions
     if (dialog.active()) {
         dialog.update(game.input(), dt);
@@ -133,68 +196,38 @@ void PlayState::update(sf::Time dt) {
         }
     }
 
-    // toggle inventory UI
-    if (game.input().wasKeyPressed(sf::Keyboard::Key::I)) {
+    // toggle inventory UI (use action mapping)
+    if (game.input().actionPressed("Inventory")) {
         if (inventoryUI) inventoryUI->toggle();
-        std::cerr << "Inventory UI toggled. open=" << (inventoryUI ? "?" : "no-ui") << "\n";
     }
 
     // toggle moisture overlay
-    if (game.input().wasKeyPressed(sf::Keyboard::Key::M)) {
-        moistureOverlay = !moistureOverlay;
-        std::cerr << "Moisture overlay " << (moistureOverlay ? "ON" : "OFF") << "\n";
-    }
-    if (game.input().wasKeyPressed(sf::Keyboard::Key::N)) {
-        fertilityOverlay = !fertilityOverlay;
-        std::cerr << "Fertility overlay " << (fertilityOverlay ? "ON" : "OFF") << "\n";
-    }
+    if (game.input().actionPressed("ToggleMoisture")) { moistureOverlay = !moistureOverlay; }
+    if (game.input().actionPressed("ToggleFertility")) { fertilityOverlay = !fertilityOverlay; }
     // distance unit toggle (tiles/pixels)
-    if (game.input().wasKeyPressed(sf::Keyboard::Key::T)) {
-        respawnDistanceInTiles = !respawnDistanceInTiles;
-        std::cerr << "Respawn distance units set to " << (respawnDistanceInTiles ? "tiles" : "pixels") << "\n";
-    }
-    if (game.input().wasKeyPressed(sf::Keyboard::Key::U)) {
-        showMinimap = !showMinimap;
-        std::cerr << "Minimap " << (showMinimap ? "ON" : "OFF") << "\n";
-    }
+    if (game.input().actionPressed("ToggleRespawnUnits")) { respawnDistanceInTiles = !respawnDistanceInTiles; }
+    if (game.input().actionPressed("ToggleMinimap")) { showMinimap = !showMinimap; }
     // add minimap scale cycle (J)
-    if (game.input().wasKeyPressed(sf::Keyboard::Key::J)) {
+    if (game.input().actionPressed("CycleMinimapScale")) {
         // cycle through 2,3,4 then back
         if (minimapTilePixel < 4.f) minimapTilePixel += 1.f; else minimapTilePixel = 2.f;
-        std::cerr << "Minimap scale tilePx=" << minimapTilePixel << "\n";
     }
     // toggle minimap view rectangle
-    if (game.input().wasKeyPressed(sf::Keyboard::Key::V)) {
-        showMinimapViewRect = !showMinimapViewRect;
-        std::cerr << "Minimap view rect " << (showMinimapViewRect ? "ON" : "OFF") << "\n";
-    }
+    if (game.input().actionPressed("ToggleMinimapViewRect")) { showMinimapViewRect = !showMinimapViewRect; }
     // toggle entity icons on minimap
-    if (game.input().wasKeyPressed(sf::Keyboard::Key::G)) {
-        showMinimapEntities = !showMinimapEntities;
-        std::cerr << "Minimap entities " << (showMinimapEntities ? "ON" : "OFF") << "\n";
-    }
-    if (game.input().wasKeyPressed(sf::Keyboard::Key::H)) {
-        showHelpOverlay = !showHelpOverlay;
-        std::cerr << "Help overlay " << (showHelpOverlay ? "ON" : "OFF") << "\n";
-    }
+    if (game.input().actionPressed("ToggleMinimapEntities")) { showMinimapEntities = !showMinimapEntities; }
+    if (game.input().actionPressed("Help")) { showHelpOverlay = !showHelpOverlay; }
     // debug key: toggle death penalty mode?
-    if (game.input().wasKeyPressed(sf::Keyboard::Key::Y)) {
-        enableDeathPenalty = !enableDeathPenalty;
-        std::cerr << "Death penalty " << (enableDeathPenalty ? "ENABLED" : "DISABLED") << "\n";
-    }
+    if (game.input().actionPressed("ToggleDeathPenalty")) { enableDeathPenalty = !enableDeathPenalty; }
     // quick save/load
-    if (game.input().wasKeyPressed(sf::Keyboard::Key::K)) {
-        saveGame("SaveGame.json");
-    }
-    if (game.input().wasKeyPressed(sf::Keyboard::Key::L)) {
-        loadGame("SaveGame.json");
-    }
+    if (game.input().actionPressed("QuickSave")) { saveGame("SaveGame.json"); SaveCustomBindings(game.input(), "bindings.saved.json"); }
+    if (game.input().actionPressed("QuickLoad")) { loadGame("SaveGame.json"); }
 
     // ensure UI gets per-frame input handling
     if (inventoryUI) inventoryUI->update(game.input(), game.getWindow(), dt);
 
     // toggle rail build tool
-    if (game.input().wasKeyPressed(sf::Keyboard::Key::B)) {
+    if (game.input().actionPressed("RailTool")) {
         if (railTool) {
             railTool->toggle();
             std::cerr << "Rail tool toggled. enabled=" << (railTool->enabled ? 1 : 0) << "\n";
@@ -203,15 +236,24 @@ void PlayState::update(sf::Time dt) {
 
     // process input into player (sets vel & flags)
     player->update(dt);
-
     timeSinceLastProjectile += dt.asSeconds();
-    // fire projectile (space) in facing direction (use movement input velocity as direction) with cooldown
-    if (game.input().wasKeyPressed(sf::Keyboard::Key::Space) && timeSinceLastProjectile >= projectileCooldown) {
+    // fire projectile using action mapping
+    if (game.input().actionPressed("Shoot") && timeSinceLastProjectile >= projectileCooldown) {
         sf::Vector2f dir = player->computeDesiredMove(sf::seconds(1.f));
         if (dir.x == 0 && dir.y == 0) dir = {1.f,0.f};
         float len = std::sqrt(dir.x*dir.x + dir.y*dir.y);
         if (len > 0.f) dir /= len;
-        spawnProjectile(std::make_unique<Projectile>(player->position(), dir * 300.f));
+        float dmg = player->baseDamage();
+        float projSpeed = 300.f; float projKnock = 0.f; float projLife = 2.f;
+        if (auto *tj = g_getTunablesJson()) {
+            if ((*tj).contains("projectile")) {
+                auto &pj = (*tj)["projectile"];
+                if (pj.contains("speed")) projSpeed = pj["speed"].get<float>();
+                if (pj.contains("knockback")) projKnock = pj["knockback"].get<float>();
+                if (pj.contains("lifetime")) projLife = pj["lifetime"].get<float>();
+            }
+        }
+        spawnProjectile(std::make_unique<Projectile>(player->position(), dir * projSpeed, projSpeed, projLife, dmg, projKnock));
         timeSinceLastProjectile = 0.f;
     }
 
@@ -274,14 +316,21 @@ void PlayState::update(sf::Time dt) {
                 sf::FloatRect pb = proj->getBounds();
                 for (auto &e : entities) {
                     if (auto hostile = dynamic_cast<HostileNPC*>(e.get())) {
-                        // replace intersects usage
                         sf::FloatRect hb = hostile->getBounds();
-                        sf::FloatRect tb = hb; // rename for clarity
+                        sf::FloatRect tb = hb;
                         if (!(pb.position.x + pb.size.x <= tb.position.x || tb.position.x + tb.size.x <= pb.position.x || pb.position.y + pb.size.y <= tb.position.y || tb.position.y + tb.size.y <= pb.position.y)) {
-                            // apply damage
                             hostile->takeDamage(proj->damage);
-                            if (hostile->isDead()) {
-                                // mark for removal after loop
+                            // apply knockback if any
+                            float kb = proj->getKnockback();
+                            if (kb > 0.f) {
+                                // derive direction from projectile velocity
+                                sf::Vector2f v = proj->getVelocity();
+                                float vl = std::sqrt(v.x*v.x + v.y*v.y);
+                                if (vl > 0.f) v /= vl; else v = {1.f,0.f};
+                                // directly move hostile (simple knockback); future: integrate with tile collision
+                                if (auto h = dynamic_cast<HostileNPC*>(e.get())) {
+                                    h->nudge(v * kb * 0.1f);
+                                }
                             }
                             // spawn combat text
                             try {
@@ -304,8 +353,35 @@ void PlayState::update(sf::Time dt) {
         if (remove) it = worldProjectiles.erase(it); else ++it;
     }
 
-    // cull dead hostile NPCs
-    entities.erase(std::remove_if(entities.begin(), entities.end(), [](const std::unique_ptr<Entity>& e){ auto h = dynamic_cast<HostileNPC*>(e.get()); return h && h->isDead(); }), entities.end());
+    // cull dead hostile NPCs (and spawn drops)
+    for (auto it = entities.begin(); it != entities.end(); ) {
+        bool erase = false;
+        if (auto h = dynamic_cast<HostileNPC*>(it->get())) {
+            if (h->isDead()) {
+                // spawn drops
+                try {
+                    auto &f = game.resources().font("assets/fonts/arial.ttf"); (void)f; // ensure font loaded for potential text if needed
+                } catch(...) {}
+                // simple RNG
+                static std::mt19937 rng(1337u);
+                std::uniform_real_distribution<float> dist(0.f,1.f);
+                float r1 = dist(rng); float r2 = dist(rng);
+                auto hb = h->getBounds(); sf::Vector2f dropPos(hb.position.x + hb.size.x*0.5f, hb.position.y + hb.size.y*0.5f);
+                // fiber drop
+                if (r1 < 0.6f) {
+                    auto fiber = std::make_shared<Item>("fiber_common", "Fiber", "Common plant fiber", 1);
+                    entities.push_back(std::make_unique<ItemEntity>(fiber, dropPos + sf::Vector2f{-4.f,-4.f}));
+                }
+                // crystal drop
+                if (r2 < 0.1f) {
+                    auto crystal = std::make_shared<Item>("crystal_rare", "Crystal", "Rare crystalline shard", 1);
+                    entities.push_back(std::make_unique<ItemEntity>(crystal, dropPos + sf::Vector2f{4.f,4.f}));
+                }
+                erase = true;
+            }
+        }
+        if (erase) it = entities.erase(it); else ++it;
+    }
 
     // update combat texts
     for (auto &ct : combatTexts) {
@@ -321,7 +397,8 @@ void PlayState::update(sf::Time dt) {
     for (auto it = entities.begin(); it != entities.end(); ) {
         if (auto c = dynamic_cast<Crop*>(it->get())) {
             if (c->isFinished()) {
-                // compute tile and mark plantable if inside map
+                if (c->yieldAmount() > 0 && !c->isFinished()) {}
+                if (c->yieldAmount() > 0 && c->yieldAmount()) { harvestedCropsCount++; if (!fertilizerUnlocked && harvestedCropsCount >= 10) { fertilizerUnlocked = true; std::cerr << "Fertilizer unlocked after harvesting 10 crops!\n"; } }
                 sf::FloatRect b = c->getBounds();
                 unsigned tx = (unsigned)std::floor((b.position.x + b.size.x*0.5f)/ map.tileSize());
                 unsigned ty = (unsigned)std::floor((b.position.y + b.size.y*0.5f)/ map.tileSize());
@@ -346,16 +423,34 @@ void PlayState::update(sf::Time dt) {
         unsigned ts = map.tileSize();
         unsigned tx = (unsigned)std::floor(worldPos.x / ts);
         unsigned ty = (unsigned)std::floor(worldPos.y / ts);
-        if (map.isTilePlantable(tx,ty)) map.addWater(tx,ty,0.25f);
+        if (player->hasWateringTool()) {
+            // boosted watering if tool present
+            map.addWater(tx,ty,0.4f);
+            // minor splash to von neumann neighbors
+            if (tx>0) map.addWater(tx-1,ty,0.1f);
+            if (tx+1<map.width()) map.addWater(tx+1,ty,0.1f);
+            if (ty>0) map.addWater(tx,ty-1,0.1f);
+            if (ty+1<map.height()) map.addWater(tx,ty+1,0.1f);
+        } else if (map.isTilePlantable(tx,ty)) map.addWater(tx,ty,0.25f);
     }
     // fertilize: press F to boost fertility on player tile (prototype)
-    if (game.input().wasKeyPressed(sf::Keyboard::Key::F)) {
-        unsigned ts = map.tileSize();
-        sf::Vector2f ppos = player->position();
-        unsigned tx = (unsigned)std::floor(ppos.x / ts);
-        unsigned ty = (unsigned)std::floor(ppos.y / ts);
-        map.addFertility(tx,ty,0.1f);
-        std::cerr << "Fertilized tile " << tx << "," << ty << " (+0.1)\n";
+    if (game.input().actionPressed("Fertilize")) {
+        if (!fertilizerUnlocked) {
+            if (harvestedCropsCount >= 10) fertilizerUnlocked = true; else {
+                std::cerr << "Fertilizer locked: harvest " << (10 - harvestedCropsCount) << " more crops.\n";
+            }
+        }
+        if (fertilizerUnlocked) {
+            unsigned ts = map.tileSize();
+            sf::Vector2f ppos = player->position();
+            unsigned tx = (unsigned)std::floor(ppos.x / ts);
+            unsigned ty = (unsigned)std::floor(ppos.y / ts);
+            bool usedFert = false;
+            for (auto &it : player->inventory().items()) {
+                if (it && it->id == "fert_basic" && it->stackSize > 0) { it->stackSize -= 1; usedFert = true; map.addFertility(tx,ty,0.15f); break; }
+            }
+            if (!usedFert) map.addFertility(tx,ty,0.05f);
+        }
     }
 
     // update rail tool if enabled
@@ -378,8 +473,8 @@ void PlayState::update(sf::Time dt) {
         }
     }
 
-    // E key interaction: proximity-based check
-    if (game.input().wasKeyPressed(sf::Keyboard::Key::E)) {
+    // Interaction / planting via action mapping instead of raw E key
+    if (game.input().actionPressed("Interact")) {
         const sf::Vector2f ppos = player->position();
         const float interactDist = 48.f; // tuneable
         const float interactDistSq = interactDist * interactDist;
@@ -410,61 +505,34 @@ void PlayState::update(sf::Time dt) {
 
         // if nothing interacted, try planting seeds on nearby soil
         if (!didInteract) {
-            std::cerr << "E pressed with no entity interaction: attempting to plant if seed available. Player pos=" << ppos.x << "," << ppos.y << "\n";
+            // reset player interact flag since we will handle planting
+            player->resetInteract();
             // find a seed in inventory
             std::string foundSeedId;
             for (auto &it : player->inventory().items()) {
-                if (it && it->id.rfind("seed_", 0) == 0) {
-                    foundSeedId = it->id;
-                    break;
-                }
+                if (it && it->id.rfind("seed_", 0) == 0 && it->stackSize > 0) { foundSeedId = it->id; break; }
             }
             if (!foundSeedId.empty()) {
-                std::cerr << "Found seed in inventory: " << foundSeedId << "\n";
-                // find a nearby plantable tile (within interactDist)
                 unsigned ts = map.tileSize();
-                int px = static_cast<int>(std::floor(ppos.x)) / static_cast<int>(ts);
-                int py = static_cast<int>(std::floor(ppos.y)) / static_cast<int>(ts);
-                std::cerr << "Player tile coords: " << px << "," << py << " (tileSize=" << ts << ")\n";
+                sf::Vector2f ppos = player->position();
+                int px = (int)std::floor(ppos.x / ts);
+                int py = (int)std::floor(ppos.y / ts);
                 bool planted = false;
                 for (int oy=-1; oy<=1 && !planted; ++oy) {
                     for (int ox=-1; ox<=1 && !planted; ++ox) {
-                        int tx = px + ox;
-                        int ty = py + oy;
-                        if (tx < 0 || ty < 0 || static_cast<unsigned>(tx) >= map.width() || static_cast<unsigned>(ty) >= map.height()) continue;
-                        sf::Vector2f center((float)tx * (float)ts + ts * 0.5f, (float)ty * (float)ts + ts * 0.5f);
-                        float dx = center.x - ppos.x;
-                        float dy = center.y - ppos.y;
-                        float dsq = dx*dx + dy*dy;
-                        std::cerr << "Checking tile " << tx << "," << ty << " center=" << center.x << "," << center.y << " distSq=" << dsq << "\n";
-                        if (dx*dx + dy*dy > interactDistSq) {
-                            std::cerr << "  -> tile too far, skipping\n";
-                            continue;
-                        }
-                        if (map.isTilePlantable((unsigned)tx, (unsigned)ty)) {
-                            std::cerr << "  -> tile is plantable\n";
-                            // consume one seed and spawn crop
-                            if (player->inventory().removeItemById(foundSeedId, 1)) {
-                                // seed id has form seed_<cropid>
-                                std::string cropId = foundSeedId.substr(std::string("seed_").size());
+                        int tx = px + ox; int ty = py + oy;
+                        if (tx < 0 || ty < 0 || (unsigned)tx >= map.width() || (unsigned)ty >= map.height()) continue;
+                        if (map.isTilePlantable((unsigned)tx,(unsigned)ty)) {
+                            sf::Vector2f center((float)tx * ts + ts * 0.5f, (float)ty * ts + ts * 0.5f);
+                            if (player->inventory().removeItemById(foundSeedId,1)) {
+                                std::string cropId = foundSeedId.substr(5); // remove seed_
                                 entities.push_back(std::make_unique<Crop>(game.resources(), map, center, cropId, 3, 6.f));
+                                map.setTile((unsigned)tx,(unsigned)ty, TileMap::Empty);
                                 planted = true;
-                                std::cerr << "Planted seed " << foundSeedId << " at tile " << tx << "," << ty << "\n";
-                                // mark tile as non-plantable (set to Empty) to avoid replanting same spot
-                                map.setTile((unsigned)tx, (unsigned)ty, TileMap::Empty);
-                            } else {
-                                std::cerr << "  -> failed to remove seed from inventory (removeItemById returned false)\n";
                             }
-                        } else {
-                            std::cerr << "  -> tile not plantable\n";
                         }
                     }
                 }
-                if (!planted) {
-                    std::cerr << "Found seed '" << foundSeedId << "' but no nearby plantable tile within interact range.\n";
-                }
-            } else {
-                std::cerr << "No seed found in player inventory when attempting to plant.\n";
             }
         }
     }
@@ -728,6 +796,25 @@ void PlayState::draw() {
         } catch(...) {}
         win.setView(prev);
     }
+
+    // Codex Overlay ---------------------------------------------------------
+    if (showCodex && codexEnabled) {
+        sf::View prev = win.getView(); win.setView(win.getDefaultView());
+        try {
+            auto &f = game.resources().font("assets/fonts/arial.ttf");
+            float padding = 8.f; float lineH = 16.f; float y = 10.f; float x = 560.f;
+            // measure height first
+            float totalH = 0.f; for (auto &kv : cropCodex) { totalH += lineH; totalH += kv.second.size()*lineH + lineH*0.5f; }
+            sf::RectangleShape bg({240.f, std::max(totalH+padding*2.f, 40.f)}); bg.setPosition({552.f, 4.f}); bg.setFillColor(sf::Color(0,0,0,140)); bg.setOutlineThickness(1.f); bg.setOutlineColor(sf::Color(90,90,90)); win.draw(bg);
+            y = 10.f + padding;
+            for (auto &kv : cropCodex) {
+                sf::Text hdr(f, kv.first + ":", 14u); hdr.setFillColor(sf::Color(255,230,120)); hdr.setPosition({x,y}); win.draw(hdr); y += lineH;
+                for (auto &ln : kv.second) { sf::Text t(f, ln, 14u); t.setFillColor(sf::Color::White); t.setPosition({x+12.f,y}); win.draw(t); y += lineH; }
+                y += lineH * 0.5f;
+            }
+        } catch(...) {}
+        win.setView(prev);
+    }
 }
 
 void PlayState::saveGame(const std::string &path) {
@@ -737,10 +824,18 @@ void PlayState::saveGame(const std::string &path) {
     j["player"]["show_respawn_marker"] = showRespawnMarker; j["player"]["show_respawn_distance"] = showRespawnDistance; j["player"]["respawn_distance_tiles"] = respawnDistanceInTiles;
     j["player"]["show_minimap"] = showMinimap; j["player"]["death_penalty"] = enableDeathPenalty; j["player"]["minimap_tile_px"] = minimapTilePixel; j["player"]["minimap_view_rect"] = showMinimapViewRect; j["player"]["minimap_entities"] = showMinimapEntities; j["player"]["help_overlay"] = showHelpOverlay;
     j["player"]["inventory"] = player->inventory().toJson();
+    j["player"]["harvested_crops"] = harvestedCropsCount; j["player"]["fertilizer_unlocked"] = fertilizerUnlocked;
+    // crops
     nlohmann::json crops = nlohmann::json::array(); for (auto &e : entities) if (auto c = dynamic_cast<Crop*>(e.get())) crops.push_back(c->toJson()); j["crops"] = crops;
+    // map
     j["map"] = map.toJson();
-    nlohmann::json hostiles = nlohmann::json::array();
-    for (auto &e : entities) if (auto h = dynamic_cast<HostileNPC*>(e.get())) { auto b = h->getBounds(); nlohmann::json hj; hj["x"] = b.position.x + b.size.x*0.5f; hj["y"] = b.position.y + b.size.y*0.5f; hj["health"] = h->getHealth(); hostiles.push_back(hj);} j["hostiles"] = hostiles;
+    // hostiles
+    nlohmann::json hostiles = nlohmann::json::array(); for (auto &e : entities) if (auto h = dynamic_cast<HostileNPC*>(e.get())) { auto b = h->getBounds(); nlohmann::json hj; hj["x"]=b.position.x + b.size.x*0.5f; hj["y"]=b.position.y + b.size.y*0.5f; hj["health"]=h->getHealth(); hostiles.push_back(hj);} j["hostiles"] = hostiles;
+    // altars
+    nlohmann::json altars = nlohmann::json::array(); for (auto &e : entities) if (auto a = dynamic_cast<Altar*>(e.get())) { auto b = a->getBounds(); nlohmann::json aj; aj["x"] = b.position.x + b.size.x*0.5f; aj["y"] = b.position.y + b.size.y*0.5f; aj["active"] = a->isActive(); aj["requires"] = a->getRequiredItems(); altars.push_back(aj);} j["altars"] = altars;
+    // dialog (simple: active and remaining lines) NOTE: serialization minimal; future: full queue
+    j["dialog"] = dialog.toJson();
+    // write file
     std::ofstream os(path); if (!os) return; os << j.dump(4); std::cerr << "Saved game\n";
 }
 
@@ -760,10 +855,28 @@ void PlayState::loadGame(const std::string &path) {
         if (p.contains("minimap_view_rect")) showMinimapViewRect = p["minimap_view_rect"].get<bool>();
         if (p.contains("minimap_entities")) showMinimapEntities = p["minimap_entities"].get<bool>();
         if (p.contains("help_overlay")) showHelpOverlay = p["help_overlay"].get<bool>();
+        if (p.contains("harvested_crops")) harvestedCropsCount = p["harvested_crops"].get<int>();
+        if (p.contains("fertilizer_unlocked")) fertilizerUnlocked = p["fertilizer_unlocked"].get<bool>();
     }
     if (j.contains("crops") && j["crops"].is_array()) { entities.erase(std::remove_if(entities.begin(), entities.end(), [](const std::unique_ptr<Entity>& e){ return dynamic_cast<Crop*>(e.get())!=nullptr;}), entities.end()); for (auto &cj : j["crops"]) if (auto nc = Crop::fromJson(game.resources(), map, cj)) entities.push_back(std::move(nc)); }
     if (j.contains("map")) { map.fromJson(j["map"]); syncRailsWithMap(); }
-    if (j.contains("hostiles") && j["hostiles"].is_array()) { entities.erase(std::remove_if(entities.begin(), entities.end(), [](const std::unique_ptr<Entity>& e){ return dynamic_cast<HostileNPC*>(e.get())!=nullptr;}), entities.end()); for (auto &hj : j["hostiles"]) if (hj.contains("x") && hj.contains("y")) { sf::Vector2f hpos(hj["x"].get<float>(), hj["y"].get<float>()); auto hostile = std::make_unique<HostileNPC>(hpos, player.get()); if (hj.contains("health")) hostile->setHealth(hj["health"].get<float>()); entities.push_back(std::move(hostile)); } }
+    if (j.contains("hostiles") && j["hostiles"].is_array()) { entities.erase(std::remove_if(entities.begin(), entities.end(), [](const std::unique_ptr<Entity>& e){ return dynamic_cast<HostileNPC*>(e.get())!=nullptr;}), entities.end()); for (auto &hj : j["hostiles"]) if (hj.contains("x") && hj.contains("y")) { sf::Vector2f hpos(hj["x"].get<float>(), hj["y"].get<float>()); auto hostile = std::make_unique<HostileNPC>(hpos, player.get()); if (hj.contains("health")) hostile->setHealth(hj["health"].get<float>()); hostile->setTileMap(&map); entities.push_back(std::move(hostile)); } }
+    if (j.contains("altars") && j["altars"].is_array()) {
+        // remove existing altars then recreate
+        entities.erase(std::remove_if(entities.begin(), entities.end(), [](const std::unique_ptr<Entity>& e){ return dynamic_cast<Altar*>(e.get())!=nullptr; }), entities.end());
+        for (auto &aj : j["altars"]) {
+            if (!aj.contains("x") || !aj.contains("y")) continue;
+            sf::Vector2f pos(aj["x"].get<float>(), aj["y"].get<float>());
+            auto altar = std::make_unique<Altar>(game.resources(), pos);
+            if (aj.contains("requires")) {
+                std::vector<std::string> req = aj["requires"].get<std::vector<std::string>>();
+                altar->setRequiredItems(req);
+            }
+            if (aj.contains("active") && aj["active"].get<bool>()) altar->forceActive(true);
+            entities.push_back(std::move(altar));
+        }
+    }
+    if (j.contains("dialog")) { dialog.fromJson(j["dialog"]); }
     std::cerr << "Loaded game\n";
 }
 

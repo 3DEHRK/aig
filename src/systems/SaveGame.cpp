@@ -1,25 +1,29 @@
 #include "SaveGame.h"
-#include "../states/PlayState.h"
 #include <nlohmann/json.hpp>
 #include <fstream>
+#include "../input/InputManager.h"
 
-using json = nlohmann::json;
+extern nlohmann::json* g_getTunablesJson();
 
-bool SaveGame::save(const PlayState& state, const std::string& path) {
-    json j;
-    // minimal: delegate to PlayState to write its data via public getters (we'll add getters shortly)
-    // placeholder: create empty save
-    j["version"] = 1;
-    std::ofstream os(path);
-    if (!os) return false;
-    os << j.dump(4);
-    return true;
+void SaveCustomBindings(const InputManager& input, const std::string& path) {
+    nlohmann::json j; nlohmann::json amap = nlohmann::json::object();
+    for (auto &kv : input.bindings()) {
+        amap[kv.first] = (int)kv.second;
+    }
+    j["keys"] = amap;
+    std::ofstream os(path); if(os) os << j.dump(2);
 }
 
-bool SaveGame::load(PlayState& state, const std::string& path) {
-    std::ifstream is(path);
-    if (!is) return false;
-    json j; is >> j;
-    // placeholder: nothing to load
+bool LoadCustomBindings(InputManager& input, const std::string& path) {
+    std::ifstream is(path); if(!is) return false; nlohmann::json j; try { is >> j; } catch(...) { return false; }
+    if (!j.is_object() || !j.contains("keys") || !j["keys"].is_object()) return false;
+    std::unordered_map<std::string, sf::Keyboard::Key> m;
+    for (auto &kv : j["keys"].items()) {
+        int code = kv.value().get<int>();
+        if (code >= 0 && code < (int)sf::Keyboard::KeyCount) {
+            m[kv.key()] = (sf::Keyboard::Key)code;
+        }
+    }
+    input.setBindings(m);
     return true;
 }

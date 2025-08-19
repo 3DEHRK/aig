@@ -3,10 +3,10 @@
 #include <cmath>
 #include <type_traits>
 #include <cstdint>
+#include <nlohmann/json.hpp>
 
 TileMap::TileMap(unsigned width, unsigned height, unsigned tileSize)
-: w(width), h(height), ts(tileSize), tiles(w*h, Empty), soilMoisture(w*h, 0.5f), soilFertility(w*h,0.6f)
-{}
+: w(width), h(height), ts(tileSize), tiles(w*h, Empty), soilMoisture(w*h, 0.5f), soilFertility(w*h,0.6f), explored(), railMeta(w*h,0) {}
 
 void TileMap::generateTestMap() {
     std::fill(tiles.begin(), tiles.end(), Empty);
@@ -31,6 +31,41 @@ void TileMap::generateTestMap() {
     }
 }
 
+void TileMap::setTile(unsigned tx, unsigned ty, Tile t) {
+    if (!inBounds(tx,ty)) return;
+    tiles[tx + ty*w] = t;
+    if (t == Rail) {
+        if (railMeta.size()!=w*h) railMeta.assign(w*h,0);
+        updateRailConnections(tx,ty);
+        // also update neighbors to refresh their bitfields
+        if (ty>0) updateRailConnections(tx,ty-1);
+        if (ty+1<h) updateRailConnections(tx,ty+1);
+        if (tx>0) updateRailConnections(tx-1,ty);
+        if (tx+1<w) updateRailConnections(tx+1,ty);
+    } else {
+        if (railMeta.size()==w*h) {
+            railMeta[tx + ty*w] = 0;
+            // neighbors might lose a connection
+            if (ty>0) updateRailConnections(tx,ty-1);
+            if (ty+1<h) updateRailConnections(tx,ty+1);
+            if (tx>0) updateRailConnections(tx-1,ty);
+            if (tx+1<w) updateRailConnections(tx+1,ty);
+        }
+    }
+}
+
+void TileMap::updateRailConnections(unsigned tx, unsigned ty) {
+    if (!inBounds(tx,ty)) return;
+    if (railMeta.size()!=w*h) railMeta.assign(w*h,0);
+    if (!isTileRail(tx,ty)) { railMeta[tx + ty*w] = 0; return; }
+    uint8_t bits = 0;
+    if (ty>0 && isTileRail(tx,ty-1)) bits |= 1; // N
+    if (tx+1<w && isTileRail(tx+1,ty)) bits |= 2; // E
+    if (ty+1<h && isTileRail(tx,ty+1)) bits |= 4; // S
+    if (tx>0 && isTileRail(tx-1,ty)) bits |= 8; // W
+    railMeta[tx + ty*w] = bits;
+}
+
 void TileMap::draw(sf::RenderWindow& window) {
     sf::RectangleShape r;
     r.setSize({float(ts), float(ts)});
@@ -47,7 +82,17 @@ void TileMap::draw(sf::RenderWindow& window) {
                     auto lerp=[&](uint8_t a,uint8_t b){ return uint8_t(a + (b-a)*fert); };
                     r.setFillColor(sf::Color(lerp(base.r,rich.r), lerp(base.g,rich.g), lerp(base.b,rich.b)));
                 } break; // soil
-                case Rail: r.setFillColor(sf::Color(100, 80, 40)); break; // placeholder rail
+                case Rail: {
+                    uint8_t bits = railBits(x,y);
+                    // color encode connections count for now
+                    int cnt = ((bits&1)!=0)+((bits&2)!=0)+((bits&4)!=0)+((bits&8)!=0);
+                    sf::Color base(100,80,40);
+                    if (cnt==1) base = sf::Color(110,90,50);
+                    else if (cnt==2) base = sf::Color(125,105,60);
+                    else if (cnt==3) base = sf::Color(140,120,70);
+                    else if (cnt==4) base = sf::Color(160,140,80);
+                    r.setFillColor(base);
+                } break;
             }
             r.setPosition(sf::Vector2f{float(x*ts), float(y*ts)});
             window.draw(r);
@@ -222,16 +267,15 @@ bool TileMap::isRectColliding(const sf::FloatRect& rect) const {
 }
 
 void TileMap::updateSoil(sf::Time dt) {
-    float decay = dt.asSeconds() * 0.02f; // moisture moves toward baseline 0.3
+    float ds = dt.asSeconds();
     for (size_t i=0;i<soilMoisture.size();++i) {
         float &m = soilMoisture[i];
-        if (m > 0.3f) m = std::max(0.3f, m - decay);
-        else if (m < 0.3f) m = std::min(0.3f, m + decay*0.5f);
+        if (m > soilMoistureTarget) m = std::max(soilMoistureTarget, m - soilMoistureDecay * ds);
+        else if (m < soilMoistureTarget) m = std::min(soilMoistureTarget, m + (soilMoistureDecay*0.5f) * ds);
     }
-    // fertility passive very slow regen toward 0.5
-    float fertStep = dt.asSeconds() * 0.005f;
+    float fertStep = soilFertilityRegen * ds;
     for (float &f : soilFertility) {
-        if (f < 0.5f) f = std::min(0.5f, f + fertStep);
+        if (f < soilFertilityTarget) f = std::min(soilFertilityTarget, f + fertStep);
     }
 }
 
@@ -245,4 +289,24 @@ void TileMap::addFertility(unsigned tx, unsigned ty, float amt) {
     if (!inBounds(tx,ty)) return;
     float &f=soilFertility[tx+ty*w];
     f = std::max(0.f, std::min(1.f, f + amt));
+}
+
+nlohmann::json TileMap::toJson() const {
+    nlohmann::json j; j["w"]=w; j["h"]=h; j["ts"]=ts; j["tiles"]=tiles; j["soilMoisture"]=soilMoisture; j["soilFertility"]=soilFertility; j["explored"]=explored; if (railMeta.size()==w*h) j["railMeta"]=railMeta; return j; }
+void TileMap::fromJson(const nlohmann::json& j) {
+    if (!j.contains("w")||!j.contains("h")||!j.contains("ts")||!j.contains("tiles")) return;
+    w=j["w"].get<unsigned>(); h=j["h"].get<unsigned>(); ts=j["ts"].get<unsigned>(); tiles=j["tiles"].get<std::vector<uint8_t>>();
+    if (tiles.size()!=w*h) tiles.assign(w*h, Empty);
+    soilMoisture = (j.contains("soilMoisture")? j["soilMoisture"].get<std::vector<float>>() : std::vector<float>(w*h,0.5f));
+    soilFertility = (j.contains("soilFertility")? j["soilFertility"].get<std::vector<float>>() : std::vector<float>(w*h,0.5f));
+    if (soilMoisture.size()!=w*h) soilMoisture.assign(w*h,0.5f);
+    if (soilFertility.size()!=w*h) soilFertility.assign(w*h,0.5f);
+    explored = (j.contains("explored")? j["explored"].get<std::vector<uint8_t>>() : std::vector<uint8_t>(w*h,0));
+    if (explored.size()!=w*h) explored.assign(w*h,0);
+    railMeta = (j.contains("railMeta")? j["railMeta"].get<std::vector<uint8_t>>() : std::vector<uint8_t>(w*h,0));
+    if (railMeta.size()!=w*h) railMeta.assign(w*h,0);
+    // recompute any missing rail bitfields if legacy save (railMeta missing but rails present)
+    if (!j.contains("railMeta")) {
+        for (unsigned y=0;y<h;++y) for(unsigned x=0;x<w;++x) if (isTileRail(x,y)) updateRailConnections(x,y);
+    }
 }

@@ -1,10 +1,23 @@
 #include "Player.h"
 #include "ItemEntity.h"
 #include <algorithm>
+#include <nlohmann/json.hpp>
+extern nlohmann::json* g_getTunablesJson();
 
 Player::Player(InputManager& inputMgr)
 : speed(200.f), input(inputMgr), inv(32), health(100.f), maxHealth(100.f), regenRate(5.f), regenDelay(2.f), sinceDamage(0.f), invulnTimeRemaining(0.f)
 {
+    // apply tunables if present
+    if (auto *tj = g_getTunablesJson()) {
+        if ((*tj).contains("player")) {
+            auto &pj = (*tj)["player"];
+            if (pj.contains("speed")) speed = pj["speed"].get<float>();
+            if (pj.contains("regen_rate")) regenRate = pj["regen_rate"].get<float>();
+            if (pj.contains("regen_delay")) regenDelay = pj["regen_delay"].get<float>();
+            if (pj.contains("base_damage")) damageBase = pj["base_damage"].get<float>();
+            if (pj.contains("regen_curve_exponent")) regenCurveExponent = pj["regen_curve_exponent"].get<float>();
+        }
+    }
     shape.setSize({32.f, 32.f});
     shape.setFillColor(sf::Color::Green);
     shape.setOrigin(shape.getSize() / 2.f);
@@ -13,11 +26,13 @@ Player::Player(InputManager& inputMgr)
 
 void Player::update(sf::Time dt) {
     vel = {0.f, 0.f};
-    if (input.isKeyDown(sf::Keyboard::Key::W)) vel.y -= speed;
-    if (input.isKeyDown(sf::Keyboard::Key::S)) vel.y += speed;
-    if (input.isKeyDown(sf::Keyboard::Key::A)) vel.x -= speed;
-    if (input.isKeyDown(sf::Keyboard::Key::D)) vel.x += speed;
-    if (input.wasKeyPressed(sf::Keyboard::Key::E)) interactPressed = true;
+    // Action-based movement
+    if (input.actionDown("MoveUp")) vel.y -= speed;
+    if (input.actionDown("MoveDown")) vel.y += speed;
+    if (input.actionDown("MoveLeft")) vel.x -= speed;
+    if (input.actionDown("MoveRight")) vel.x += speed;
+    if (input.actionPressed("Interact")) interactPressed = true;
+    if (input.actionPressed("Inventory")) {/* inventory handled in state */}
     if (invulnTimeRemaining > 0.f) {
         invulnTimeRemaining -= dt.asSeconds();
         if (invulnTimeRemaining <= 0.f) { invulnTimeRemaining = 0.f; shape.setFillColor(sf::Color::Green); }
@@ -27,6 +42,16 @@ void Player::update(sf::Time dt) {
             if (static_cast<int>(invulnTimeRemaining * 20.f) % 2 == 0) c.a = 80; else c.a = 200;
             shape.setFillColor(c);
         }
+    }
+    if (damageFlashTimer > 0.f) {
+        damageFlashTimer -= dt.asSeconds();
+        float f = std::max(0.f, damageFlashTimer / 0.2f);
+        // blend between yellow (hit) and green (normal)
+        sf::Color normal = sf::Color::Green;
+        sf::Color hit = sf::Color(255,230,40);
+        auto lerp=[&](uint8_t a,uint8_t b){ return uint8_t(a + (b-a)*f); };
+        shape.setFillColor(sf::Color(lerp(normal.r, hit.r), lerp(normal.g, hit.g), lerp(normal.b, hit.b)));
+        if (damageFlashTimer <= 0.f && invulnTimeRemaining <= 0.f) shape.setFillColor(normal);
     }
     updateHealthRegen(dt);
 }
@@ -45,6 +70,17 @@ Inventory& Player::inventory() { return inv; }
 void Player::updateHealthRegen(sf::Time dt) {
     sinceDamage += dt.asSeconds();
     if (health < maxHealth && sinceDamage >= regenDelay) {
-        health = std::min(maxHealth, health + regenRate * dt.asSeconds());
+        float rate = regenRate;
+        if (regenCurveExponent > 0.f) {
+            float missing = (maxHealth - health) / std::max(1.f, maxHealth);
+            rate *= std::pow(missing, regenCurveExponent);
+        }
+        health = std::min(maxHealth, health + rate * dt.asSeconds());
     }
+}
+bool Player::hasWateringTool() const {
+    for (auto &it : inv.items()) {
+        if (it && it->id == "tool_wateringcan") return true;
+    }
+    return false;
 }

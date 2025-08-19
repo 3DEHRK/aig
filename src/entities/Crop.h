@@ -19,6 +19,9 @@ public:
     static std::unique_ptr<Crop> fromJson(ResourceManager& resources, TileMap& map, const nlohmann::json& j); // construct + restore
 
     bool isFinished() const { return finished; }
+    int yieldAmount() const { return yield; }
+    bool wasHarvested() const { return harvested; }
+    bool isWithered() const { return withered; }
 
 private:
     TileMap* mapPtr = nullptr; // map for soil queries
@@ -33,4 +36,6 @@ private:
     float droughtAccum = 0.f; // seconds moisture below threshold
     bool withered = false;
     bool finished = false; // ready for removal and tile freed
+    int yield = 1; // base yield (can be modified by fertility)
+    sf::Vector2f baseSize {20.f,20.f};
 };

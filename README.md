@@ -3,6 +3,11 @@
 ## Overview
 A C++17 / SFML (3.x) top‑down pixel game prototype framework inspired by Stardew‑like simulation RPGs. Provides structured subsystems: state management, entities, resources, input, basic farming & combat, respawn & navigation aids, minimap with fog‑of‑war, persistence (JSON), and configurable UI overlays.
 
+## Asset Handling
+- Missing textures now replaced by a generated magenta/gray checker (no crash).
+- Missing fonts yield silent (non-rendering) text but keep program running (logged once).
+- Altar uses sprite if available else colored fallback rectangle.
+
 ## Directory Structure (Key)
 - `src/core/` Game loop (`Game`), abstract `State` base.
 - `src/states/` Concrete states: `PlayState`, `HiddenRealmState` (prototype realm).

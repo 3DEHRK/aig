@@ -30,6 +30,15 @@ void InventoryUI::draw(sf::RenderWindow& win) {
         r.setOutlineColor(sf::Color::White);
         r.setOutlineThickness(1.f);
         win.draw(r);
+        if (items[i] && font) {
+            // show first 3 chars of name + stack
+            std::string label = items[i]->name.substr(0,3);
+            if (items[i]->stackSize > 1) label += ":" + std::to_string(items[i]->stackSize);
+            sf::Text t(*font, label, 12u);
+            t.setFillColor(sf::Color::White);
+            t.setPosition(r.getPosition() + sf::Vector2f(2.f, 2.f));
+            win.draw(t);
+        }
     }
     win.setView(prev);
 }

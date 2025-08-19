@@ -2,13 +2,12 @@
 #include "../input/InputManager.h"
 #include "../resources/ResourceManager.h"
 #include <iostream>
+#include <nlohmann/json.hpp>
 
 DialogManager::DialogManager() {
     bg.setFillColor(sf::Color(0, 0, 0, 160));
-    // create a fallback (empty) font object so we can construct sf::Text in all SFML variants.
-    // You can override it later via setFont().
     fontFallback = std::make_shared<sf::Font>();
-    // construct text with the fallback font (Font is the first parameter in this SFML version)
+    // Correct SFML3 constructor order: (font, string, size)
     text = std::make_unique<sf::Text>(*fontFallback, sf::String(), 18);
     text->setFillColor(sf::Color::White);
     text->setCharacterSize(18);
@@ -74,4 +73,26 @@ void DialogManager::draw(sf::RenderWindow& window) {
 
 bool DialogManager::active() const {
     return running;
+}
+
+nlohmann::json DialogManager::toJson() const {
+    nlohmann::json j;
+    j["active"] = running;
+    if (running) {
+        // capture remaining lines starting at current index
+        std::vector<std::string> remaining;
+        for (size_t i = index; i < lines.size(); ++i) remaining.push_back(lines[i]);
+        j["lines"] = remaining;
+    }
+    return j;
+}
+
+void DialogManager::fromJson(const nlohmann::json& j) {
+    running = false; lines.clear(); index = 0;
+    if (!j.is_object()) return;
+    if (j.contains("active") && j["active"].get<bool>() && j.contains("lines") && j["lines"].is_array()) {
+        lines = j["lines"].get<std::vector<std::string>>();
+        running = !lines.empty();
+        index = 0; // resume at first of remaining lines
+    }
 }

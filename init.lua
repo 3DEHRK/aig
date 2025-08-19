@@ -23,7 +23,7 @@ local AFTER_MESSAGE_DELAY_SEC = 150 -- wait 2:30 after typing "keep working"
 local RESTART_DELAY_SEC = 1
 
 -- chat text
-local PROMPT_TEXT = "keep working according to behaivour_rules.md"
+local PROMPT_TEXT = "keep working, read behaivor_rules.md and behave accordingly"
 local ENTER_AFTER_TYPING = true
 
 -- micro timings

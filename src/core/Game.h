@@ -19,6 +19,8 @@ public:
   void setState(std::unique_ptr<State> s);  // allow external state change
   void pushTemporaryState(std::unique_ptr<State> s);  // save current, replace with temp
   void popTemporaryState();  // restore saved if present
+  // Perform one fixed update tick (headless / testing). dtSeconds typical 1/60.f
+  void step(float dtSeconds);
 
 private:
   void processEvents();

@@ -30,22 +30,25 @@ public:
     Inventory& inventory(); // access player's inventory
 
     // Health interface
-    float getHealth() const { return health; }
-    float getMaxHealth() const { return maxHealth; }
-    bool isDead() const { return health <= 0.f; }
-    void takeDamage(float amt) { if (invulnTimeRemaining > 0.f) return; health = std::max(0.f, health - amt); sinceDamage = 0.f; damageAccumulatedThisLife += amt; }
-    // track damage taken since last respawn for potential death penalties
-    float damageThisLife() const { return damageAccumulatedThisLife; }
-    void resetLifeStats() { damageAccumulatedThisLife = 0.f; }
-    void healToFull() { health = maxHealth; sinceDamage = 0.f; }
-    void updateHealthRegen(sf::Time dt);
-    float timeSinceDamage() const { return sinceDamage; }
-
-    // Projectile spawner placeholder (PlayState harvests this list)
-    std::vector<std::unique_ptr<Entity>> projectiles;
+    bool hasHealth() const override { return true; }
+    float getHealth() const override { return health; }
+    float getMaxHealth() const override { return maxHealth; }
+    bool isDead() const override { return health <= 0.f; }
 
     void triggerInvulnerability(float seconds) { invulnTimeRemaining = seconds; }
     bool isInvulnerable() const { return invulnTimeRemaining > 0.f; }
+
+    void takeDamage(float amt) { if (invulnTimeRemaining > 0.f) return; health = std::max(0.f, health - amt); sinceDamage = 0.f; damageAccumulatedThisLife += amt; onDamaged(amt); }
+    void healToFull() { health = maxHealth; sinceDamage = 0.f; }
+    void updateHealthRegen(sf::Time dt);
+    float timeSinceDamage() const { return sinceDamage; }
+    float damageThisLife() const { return damageAccumulatedThisLife; }
+    void resetLifeStats() { damageAccumulatedThisLife = 0.f; }
+    float baseDamage() const { return damageBase; }
+    void setBaseDamage(float v) { damageBase = v; }
+    void onDamaged(float) override { damageFlashTimer = 0.2f; /* placeholder for screen flash */ }
+
+    bool hasWateringTool() const; // inventory search for tool_wateringcan
 private:
     sf::RectangleShape shape;
     float speed;
@@ -60,4 +63,7 @@ private:
     float sinceDamage = 0.f;
     float invulnTimeRemaining = 0.f;
     float damageAccumulatedThisLife = 0.f;
+    float damageBase = 10.f; // projectile or melee base damage (tunable)
+    float regenCurveExponent = 0.f; // 0 => constant rate, >0 scales with missing health^exponent
+    float damageFlashTimer = 0.f;
 };

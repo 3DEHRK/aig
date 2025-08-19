@@ -1,0 +1,11 @@
+{
+  "items": [
+    {"id": "seed_wheat", "name": "Wheat Seed", "desc": "Fast-growing staple seed."},
+    {"id": "seed_herb", "name": "Herb Seed", "desc": "Slow aromatic herb seed."},
+    {"id": "fiber", "name": "Plant Fiber", "desc": "Common crafting material."},
+    {"id": "crystal_raw", "name": "Raw Crystal", "desc": "Faintly humming shard used in rituals."},
+    {"id": "salve_small", "name": "Small Healing Salve", "desc": "Restores minor health." },
+    {"id": "tool_wateringcan", "name": "Watering Can", "desc": "Allows directed watering action."},
+    {"id": "fert_basic", "name": "Basic Fertilizer", "desc": "Slightly boosts soil fertility."}
+  ]
+}

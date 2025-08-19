@@ -1,4 +1,7 @@
 #include "Inventory.h"
+#include "../items/Item.h"
+
+extern ItemPtr MakeItem(const std::string& id, int count);
 
 Inventory::Inventory(size_t capacity)
 : cap(capacity)
@@ -40,8 +43,7 @@ void Inventory::clear() { slots.clear(); }
 
 bool Inventory::addItemById(const std::string& id, int count) {
     if (count <= 0) return false;
-    // simple placeholder naming; real system would look up item data
-    auto item = std::make_shared<Item>(id, id, "", count);
+    auto item = MakeItem(id, count);
     return addItem(item);
 }
 
