@@ -30,7 +30,11 @@ const std::vector<sf::Keyboard::Key> InputManager::defaultTrackedKeys = {
     sf::Keyboard::Key::C,
     sf::Keyboard::Key::F,
     sf::Keyboard::Key::B,
-    sf::Keyboard::Key::H
+    sf::Keyboard::Key::H,
+    sf::Keyboard::Key::Q,
+    sf::Keyboard::Key::R,
+    sf::Keyboard::Key::X,
+    sf::Keyboard::Key::Z // cart route mode
 };
 
 // track common mouse buttons

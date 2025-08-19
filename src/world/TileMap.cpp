@@ -66,7 +66,7 @@ void TileMap::updateRailConnections(unsigned tx, unsigned ty) {
     railMeta[tx + ty*w] = bits;
 }
 
-void TileMap::draw(sf::RenderWindow& window) {
+void TileMap::draw(sf::RenderWindow& window, bool showRailOverlay) {
     sf::RectangleShape r;
     r.setSize({float(ts), float(ts)});
     for (unsigned y = 0; y < h; ++y) {
@@ -77,14 +77,12 @@ void TileMap::draw(sf::RenderWindow& window) {
                 case Solid: r.setFillColor(sf::Color(60,60,60)); break; // rock
                 case Plantable: {
                     float fert = soilFertility[x + y*w];
-                    // lerp base soil color toward richer tone by fertility
                     sf::Color base(150,110,60); sf::Color rich(180,140,90);
                     auto lerp=[&](uint8_t a,uint8_t b){ return uint8_t(a + (b-a)*fert); };
                     r.setFillColor(sf::Color(lerp(base.r,rich.r), lerp(base.g,rich.g), lerp(base.b,rich.b)));
-                } break; // soil
+                } break;
                 case Rail: {
                     uint8_t bits = railBits(x,y);
-                    // color encode connections count for now
                     int cnt = ((bits&1)!=0)+((bits&2)!=0)+((bits&4)!=0)+((bits&8)!=0);
                     sf::Color base(100,80,40);
                     if (cnt==1) base = sf::Color(110,90,50);
@@ -96,6 +94,24 @@ void TileMap::draw(sf::RenderWindow& window) {
             }
             r.setPosition(sf::Vector2f{float(x*ts), float(y*ts)});
             window.draw(r);
+            if (showRailOverlay && tiles[x + y*w] == Rail) {
+                uint8_t bits = railBits(x,y);
+                sf::Vector2f basePos(float(x*ts), float(y*ts));
+                sf::Vertex lines[8]; int li=0;
+                auto push=[&](sf::Vector2f a, sf::Vector2f b){
+                    if (li+1 < 8) {
+                        lines[li].position = a; lines[li].color = sf::Color::Black; ++li;
+                        lines[li].position = b; lines[li].color = sf::Color::Black; ++li;
+                    }
+                };
+                float cx = basePos.x + ts*0.5f; float cy = basePos.y + ts*0.5f;
+                float len = ts*0.4f;
+                if (bits & 1) push({cx,cy},{cx,cy-len});
+                if (bits & 2) push({cx,cy},{cx+len,cy});
+                if (bits & 4) push({cx,cy},{cx,cy+len});
+                if (bits & 8) push({cx,cy},{cx-len,cy});
+                if (li>0) window.draw(lines, li, sf::PrimitiveType::Lines);
+            }
         }
     }
 }
@@ -309,4 +325,13 @@ void TileMap::fromJson(const nlohmann::json& j) {
     if (!j.contains("railMeta")) {
         for (unsigned y=0;y<h;++y) for(unsigned x=0;x<w;++x) if (isTileRail(x,y)) updateRailConnections(x,y);
     }
+}
+
+std::vector<sf::Vector2i> TileMap::railExitOffsets(unsigned tx, unsigned ty) const {
+    std::vector<sf::Vector2i> v; if (!isTileRail(tx,ty)) return v; uint8_t b = railBits(tx,ty);
+    if (b & 1) v.push_back({0,-1});
+    if (b & 2) v.push_back({1,0});
+    if (b & 4) v.push_back({0,1});
+    if (b & 8) v.push_back({-1,0});
+    return v;
 }

@@ -41,6 +41,7 @@ public:
     void takeDamage(float amt) { if (invulnTimeRemaining > 0.f) return; health = std::max(0.f, health - amt); sinceDamage = 0.f; damageAccumulatedThisLife += amt; onDamaged(amt); }
     void healToFull() { health = maxHealth; sinceDamage = 0.f; }
     void updateHealthRegen(sf::Time dt);
+    void setHealth(float h) { if (h < 0.f) h = 0.f; if (h > maxHealth) h = maxHealth; health = h; } // added for save/load
     float timeSinceDamage() const { return sinceDamage; }
     float damageThisLife() const { return damageAccumulatedThisLife; }
     void resetLifeStats() { damageAccumulatedThisLife = 0.f; }

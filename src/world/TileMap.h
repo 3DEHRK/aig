@@ -9,7 +9,7 @@ public:
 
     TileMap(unsigned width = 50, unsigned height = 30, unsigned tileSize = 32u);
     void generateTestMap(); // simple demo layout
-    void draw(sf::RenderWindow& window);
+    void draw(sf::RenderWindow& window, bool showRailOverlay = true);
     void drawMoistureOverlay(sf::RenderWindow& window); // debug overlay: moisture alpha
     void drawFertilityOverlay(sf::RenderWindow& window); // debug overlay: fertility tint
 
@@ -50,6 +50,13 @@ public:
 
     float moistureAt(unsigned tx, unsigned ty) const { if (!inBounds(tx,ty)) return 0.f; return soilMoisture[tx + ty*w]; }
     float fertilityAt(unsigned tx, unsigned ty) const { if (!inBounds(tx,ty)) return 0.f; return soilFertility[tx + ty*w]; }
+
+    uint8_t railConnections(unsigned tx, unsigned ty) const { return railBits(tx,ty); }
+    bool railHasNorth(unsigned tx, unsigned ty) const { return (railBits(tx,ty) & 1)!=0; }
+    bool railHasEast(unsigned tx, unsigned ty) const { return (railBits(tx,ty) & 2)!=0; }
+    bool railHasSouth(unsigned tx, unsigned ty) const { return (railBits(tx,ty) & 4)!=0; }
+    bool railHasWest(unsigned tx, unsigned ty) const { return (railBits(tx,ty) & 8)!=0; }
+    std::vector<sf::Vector2i> railExitOffsets(unsigned tx, unsigned ty) const;
 
 private:
     void updateRailConnections(unsigned tx, unsigned ty); // recompute this rail & neighbor rails

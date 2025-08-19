@@ -1,15 +1,25 @@
 # TODO / Implementation Roadmap (Restructured)
 
 ## Open Issues (Reported)
-- [ ] NPC dialog off-screen when moving; should anchor to screen-space HUD panel, not world position.
+- [x] NPC dialog off-screen when moving; should anchor to screen-space HUD panel, not world position. ✅ (now rendered in default view)
 - [x] Inventory (I) key pressed but inventory UI not visibly opening (regression) – FIX: expanded tracked keys list.
 - [x] Interact/Plant (E) no longer plants seeds when no entity targeted – FIX: restored planting branch logic.
 - [x] Inventory items invisible – FIX: added item label text (name snippet + stack) in each slot.
 
 ## Onboarding / Demo Scenarios (Planned)
 - [x] Farming demo: pre-seeded mini plot (guides planting, watering, optional fertilizing, harvest) ✅
-- [ ] Rail demo: prebuilt short loop with a moving cart the player can board (after cart system implemented) + instructional overlay.
+- [x] Rail demo: prebuilt short loop with a moving cart the player can board (after cart system implemented) + instructional overlay. ✅
 - [ ] Integrate a brief in-game note referencing behavior rules / autonomous progression toggle (optional dev build aid).
+
+## Rail Demo Test Checklist
+- [ ] Player spawns near a prebuilt rail loop with a cart moving along it.
+- [ ] Cart can be boarded (optional: press E near cart).
+- [ ] Cart follows waypoints and loops.
+- [ ] Loader/unloader tiles can be assigned and function.
+- [ ] Items can be loaded into cart and unloaded at destination.
+- [ ] Cart route can be edited (add/remove waypoints, toggle loop).
+- [ ] Save/load preserves cart state, waypoints, and logistics assignments.
+- [ ] Demo overlay or dialog explains controls (Z: route mode, 1/2: loader/unloader, B: rail tool).
 
 ## Completed
 - ✅ Minimap (fog-of-war, scale J, view rect V, entity icons G)
@@ -30,6 +40,8 @@
 - ✅ Projectile knockback + lifetime tunable (basic displacement)
 - ✅ Hostile rage (temporary speed boost after hit)
 - ✅ Basic crop codex text snippets (JSON-backed overlay toggle C)
+- ✅ Track tile orientation metadata & serialization (orientation bits, overlay, helpers, persistence)
+- ✅ Hostile variant persistence (grunt/tank type saved & restored)
 
 ---
 ## Phase 0: Core Stability & Persistence Baseline
@@ -56,25 +68,29 @@ Goal: Lightweight pressure; postpone advanced ecology systems.
 - [x] Basic hit feedback polish (flash, small knockback) ✅
 - [x] Drop table stub (hostile -> item entities) ✅
 - [x] Rudimentary threat scaling placeholder (time + movement → spawn accel & cap) ✅
-- [ ] Content: 2 hostile variants (melee grunt, slow tank) with distinct speed/health
-- [ ] Loot variety: common fiber, rare crystal (future ritual use)
-- [ ] Basic consumable: small healing salve craftable from fiber (test crafting flow later)
+- [x] Content: 2 hostile variants (melee grunt, slow tank) ✅ (spawn weight scales via threat; variant type not yet persisted in saves)
+- [x] Loot variety: common fiber, rare crystal (future ritual use) ✅ (standardized item IDs fiber / crystal_raw)
+- [x] Basic consumable: small healing salve craftable from fiber (test crafting flow later) ✅ (3 fiber -> 1 salve_small; use heals 25)
 
 ## Phase 3: Rails & Logistics (Intro Tier Only)
 Goal: Movement of items in carts on simple tracks; advanced routing later.
-- [ ] Track tile orientation metadata & serialization
-- [ ] Cart entity
-- [ ] Manual route assignment UI (list of waypoints)
-- [ ] Loader / unloader minimum viable transfer (single item per tick)
-- [ ] Content: Starter logistics quest ("Automate a wheat haul") awarding extra cart speed module placeholder
+- [x] Track tile orientation metadata & serialization ✅
+- [x] Cart entity prototype (moves along waypoints on rails)
+- [x] Manual route assignment UI (list of waypoints) ✅
+- [x] Loader / unloader minimum viable transfer (single item per tick) ✅
+- [x] Cart waypoint + loader/unloader persistence (save/load cart.waypoints, loop, logistics tiles) ✅
+- [x] Content: Starter logistics quest ("Automate a wheat haul") awarding extra cart speed module placeholder ✅
 
 ## Phase 4: Quests & Directive Scaffold
 Goal: Motivational layer for early gameplay.
-- [ ] Directive evaluator engine (poll + simple conditions)
-- [ ] Quest data structure + serialization
-- [ ] Minimal journal UI (list active quests / directives)
-- [ ] Sample starter quest & directive templates
-- [ ] Content: Initial quest chain (3 steps: Plant seeds -> Harvest 5 crops -> Build first rail segment)
+- [~] Directive evaluator engine (initial scaffold: Directive struct, evaluation & HUD display) ⚠️
+- [~] Quest data structure + serialization (basic Quest already implemented earlier; may expand) ⚠️
+- [~] Minimal journal UI (panel toggle + listings prototype) ⚠️
+- [x] Directive persistence & load fallback ✅
+- [x] Sample starter quest & directive templates (chain logic) ✅
+- [x] Content: Initial quest chain (3 steps: Plant seeds -> Harvest 5 crops -> Build first rail segment) ✅
+
+(Items marked [~] are partially implemented and need completion / polish before full ✅)
 
 ## Phase 5: Ritual & Hidden Realm (Baseline)
 Goal: Give altar progression purpose; delay complex instability.

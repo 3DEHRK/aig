@@ -54,6 +54,13 @@ static void applyDefaultBindings(InputManager& input) {
         input.bindAction("QuickLoad", sf::Keyboard::Key::L);
         input.bindAction("Fertilize", sf::Keyboard::Key::F);
         input.bindAction("ToggleCodex", sf::Keyboard::Key::C);
+        input.bindAction("CraftSalve", sf::Keyboard::Key::Q);
+        input.bindAction("UseSalve", sf::Keyboard::Key::R);
+        input.bindAction("ToggleRailOverlay", sf::Keyboard::Key::X);
+        input.bindAction("CartRouteMode", sf::Keyboard::Key::Z); // new action
+        input.bindAction("AssignLoader", sf::Keyboard::Key::Num1);
+        input.bindAction("AssignUnloader", sf::Keyboard::Key::Num2);
+        input.bindAction("Journal", sf::Keyboard::Key::J); // Phase 4 journal panel toggle (temporarily J; consider remap later)
     }
 }
 

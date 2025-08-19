@@ -3,6 +3,30 @@
 ## Purpose
 Living checklist for verifying core systems after changes. Convert into automated harness progressively.
 
+### Directive Persistence (Phase 4 Update)
+1. Start new session; plant a seed to complete Plant a seed directive; harvest 2 crops (progress 2/5); place one rail (complete build_rail).
+2. QuickSave (K). Inspect save JSON: directives array with three entries (ids plant_seed, harvest_crops, build_rail). Verify progress & satisfied flags reflect in-game state.
+3. Quit & relaunch; QuickLoad (L). Journal (press J) shows completed directives with [Done] plus partially progressed harvest entry (2/5).
+4. Harvest remaining crops to reach 5; directive auto-updates to done; save & reload; all three directives satisfied.
+5. Delete directives block from save JSON manually; reload; defaults seeded (all unsatisfied) without crash.
+6. Corrupt one directive entry (remove text) and reload; fallback text restored for known id.
+
+### Journal Toggle Binding
+1. Press J (default Journal action) to open panel; verify directives & quests listed.
+2. Rebind Journal in bindings.json (e.g., to K) with {"keys": {"Journal": <code>}}; launch; J no longer toggles; new key does.
+3. QuickSave to persist remap (bindings.saved.json) then relaunch without original bindings.json; Journal key still remapped.
+
+### Cart Route Assignment UI (New)
+1. Press Z to toggle Cart Route Mode (status message bottom of screen).
+2. Left-click each rail tile of a desired path: numbered waypoint markers (0,1,2,...) appear with cyan circles; active/current waypoint highlighted amber.
+3. Waypoint connection lines render between sequential points; loop line (fainter) drawn from last to first when 3+ points.
+4. Cart immediately follows new path (after reaching or snapping to first waypoint if list cleared & rebuilt).
+5. Right-click while in route mode: clears all waypoints; cart stops (no movement until at least one waypoint added).
+6. Toggle mode off (Z) hides overlay; cart continues along existing path.
+7. Save/Load currently does NOT persist cart waypoints (known limitation) – verify they are lost after reload (future task).
+8. Attempt to add waypoint on non-rail tile: ignored (no crash, no marker).
+9. Regression: Exiting route mode re-enables normal left-click interactions (NPC dialog, altar activation) and right-click watering.
+
 ### Damage Hook (Updated)
 1. Fire projectile at hostile; verify damage number shows and health decrements once.
 2. Instrument HostileNPC::onDamaged and Player::onDamaged to log; confirm logs on each hit (inline takeDamage calls onDamaged).
@@ -133,6 +157,16 @@ Living checklist for verifying core systems after changes. Convert into automate
 4. Confirm threatLevel caps at 1.0 (no further interval reduction beyond intended min).
 5. Regression: Resetting game (new session) resets threatLevel to 0; threat not persisted (intended for now).
 6. Optional: Temporarily log threatLevel each 10s to verify growth curve stability.
+
+### Hostile Variants (New)
+1. Start new session; observe initial spawned hostile near (400,300) is a grunt (small red square).
+2. Wait for additional spawns; early threatLevel low so tankSpawnChance ~0 -> only grunts appear.
+3. Increase threat (move continuously ~60s); verify occasional larger darker red square (40x40) appears = Tank variant.
+4. Tank has noticeably slower speed (approx 40 vs 70) and higher health (3x grunt). Count projectile hits required.
+5. Confirm spawn ratio approaches 50% maximum at very high threat (simulate by temporarily forcing tankSpawnChance=0.5 in code for test).
+6. Kill both variants; loot drop probabilities unchanged (fiber ~60%, crystal ~10%).
+7. Save/Load: variant type now persisted (type: "grunt"|"tank" in hostiles array); after reload, sizes/health reflect stored type.
+8. Regression: ensure spawnHostile uses deterministic RNG sequence (seed 1337) for reproducible automated tests (first 10 spawn types stable after fixed movement script).
 
 ## New Fallback Test
 - Temporarily remove or rename `assets/textures/entities/altar.png`.
@@ -322,3 +356,67 @@ Update this file whenever a new feature adds input, persistence keys, or systemi
 5. After final dialog closes demo flags set (no re-trigger on further actions).
 6. Save & reload mid-demo: progression persists (verify dialog resumes correct step or note if not yet persisted—persistence future enhancement).
 7. Regression: Demo tiles revert to normal gameplay after completion (no repeated guidance spam).
+
+### Dialog Screen-Space Anchoring (Fixed)
+1. Start game; trigger NPC dialog (click NPC).
+2. Move player while dialog open: panel remains fixed near bottom of screen (does not scroll with world).
+3. Resize window (if supported): dialog re-centers / width adjusts within new window bounds (40px margin each side).
+4. Open inventory simultaneously: both inventory UI and dialog visible without overlapping critical text (adjust stacking later if needed).
+5. Regression: Ensure dialog closes properly after last line and no world-space version left behind.
+
+### Loot Variety (Updated)
+1. Kill 30 hostiles; count fiber vs crystal_raw drops. Fiber should approximate 60% occurrence, crystal_raw roughly 10% (allow small variance). Record counts.
+2. Verify spawned ItemEntity ids exactly "fiber" and "crystal_raw" matching items_basic.json definitions.
+3. Collect drops; inventory stacks increase accordingly (fiber stacks, crystals accumulate individually or stack if implemented).
+4. Save after several drops on ground; reload (drops currently ephemeral if ItemEntity not serialized—note limitation if still true).
+5. Regression: No old ids (fiber_common, crystal_rare) appear in newly spawned loot.
+
+### Healing Salve Consumable (New)
+1. Accumulate >=3 fiber drops.
+2. Press bound CraftSalve key (default Q) -> log "Crafted small healing salve" and inventory gains salve_small.
+3. Damage player below full health; press UseSalve key (default R) -> health increases by up to 25 (clamped) and salve stack decrements.
+4. Attempt crafting with <3 fiber -> log informs remaining needed.
+5. Attempt use with no salve_small -> no effect, no crash.
+6. Regression: Craft multiple times; stacking salves works (each use removes one).
+
+### Rail Orientation Metadata (Completed)
+1. Place straight, corner, T-junction rails using Rail Tool (B).
+2. Toggle rail overlay (X) – connection lines and coloring reflect exits.
+3. Save (K) and inspect JSON: railMeta present; length width*height.
+4. Remove a rail, save, reload: orientation updates persist.
+5. Older saves (without railMeta) still compute connections (backwards compatibility).
+
+### Cart Persistence (Planned)
+1. Current limitation: cart waypoints, loader/unloader tiles NOT yet serialized (verify lost after reload). Will be added before expanding logistics depth.
+
+### Cart Logistics Loader/Unloader (New)
+1. Enter Cart Route Mode (Z). Press 1 then left-click a rail tile to set loader (L indicator appears). Press 2 then left-click another rail tile along path to set unloader (U indicator).
+2. Ensure player has several seed_wheat in inventory (default start). Allow cart to pass over loader tile; each second near tile cart gains up to 1 seed (tint shifts to cargo color when carrying).
+3. Cart reaches unloader tile: seeds transferred back to player inventory one per second; cart tint reverts when empty.
+4. Clearing waypoints (right-click) stops movement; logistics pauses (no transfers unless cart within radius already).
+5. Remove loader assignment (set loader again elsewhere) – previous tile no longer transfers.
+6. Capacity test: After 16 items loaded (capacity), loader stops adding; unloader resumes unloading until empty then loader can refill.
+7. Regression: Exiting mode (Z) does not prevent ongoing transfers when cart passes tiles (still active internally).
+
+### Cart Waypoint & Logistics Persistence (New)
+1. Enter route mode (Z), create at least 4 waypoints and ensure cart loops.
+2. Assign loader (1 + click waypoint 1) and unloader (2 + click waypoint 3).
+3. Save (K). Inspect save JSON: has cart object with waypoints array and loop flag; logistics with loader/unloader coords.
+4. Quit, relaunch, load (L). Cart immediately follows restored path; loader/unloader functioning without reassign.
+5. Clear waypoints, save, reload: cart has zero waypoints (idle) until new ones added.
+6. Regression: Older save without cart/logistics keys loads (cart retains default initial demo path or empty if not present) without crash.
+
+### Starter Logistics Quest (New)
+1. New session: ensure quest list includes "Automate a Wheat Haul" (console shows nothing yet; verify by inspecting save JSON after first save: quests array with id starter_logistics).
+2. Set loader/unloader and run cart so 5 seeds move. After each unload progress increments; when reaching 5 console logs quest completion.
+3. Save then reload mid-progress (e.g., after 2 moved); progress persists.
+4. After completion, ensure quest marked completed in save (completed:true, objective completed:true, progress==target).
+
+### Quest Chain Progression (Phase 4)
+1. Start new session; observe chain hint text: "Chain: Plant a seed".
+2. Plant a seed; dialog appears advancing chain to harvest step; hint updates to "Chain: Harvest 5 crops".
+3. Harvest 5 crops; chain dialog prompts rail step; hint shows "Chain: Place a rail segment".
+4. Place a rail (B then click) or use existing rail tool to add a segment; dialog confirms completion; chain hint disappears (stage 3 done).
+5. Save & reload mid-chain (e.g., after planting but before harvest completion); ensure quest_chain_stage persisted and hint reflects correct step.
+6. Corrupt or remove quest_chain_stage in save JSON; reload; stage defaults to 0 with seed directive still satisfied if it was (verify no crash).
+7. Complete chain fully; save & reload; no chain hint displayed.

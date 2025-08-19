@@ -1,6 +1,9 @@
 {
   "player": { "speed": 200, "regen_rate": 5, "regen_delay": 2, "regen_curve_exponent": 0.0, "base_damage": 10 },
-  "hostile": { "grunt": { "speed": 60, "health": 10, "contact_damage": 8, "rage_speed_mult": 1.4, "rage_duration": 1.5 }, "tank": { "speed": 35, "health": 28 } },
+  "hostile": {
+    "grunt": { "speed": 70, "health": 30, "contact_damage": 5 },
+    "tank":  { "speed": 40, "health": 90, "contact_damage": 12 }
+  },
   "projectile": { "speed": 300, "knockback": 40, "lifetime": 2.0 },
   "farming": { "base_growth_seconds": { "wheat": 6, "herb": 12 }, "moisture_factor": 0.5, "fertility_factor": 0.5, "yield_bonus_scale": 2.0 },
   "soil": { "moisture_target": 0.3, "moisture_decay_per_sec": 0.02, "fertility_target": 0.5, "fertility_regen_per_sec": 0.005 }
