@@ -148,6 +148,11 @@ private:
     float magnetAcceleration = 900.f; // px/s^2 toward player
     float magnetMaxSpeed = 600.f; // cap
 
+    // Water/Fertilize All settings
+    float areaActionCooldown = 2.f; // seconds between mass actions
+    float areaActionTimer = 0.f;
+    int areaRadius = 5; // starting radius
+
     void updateQuests();
     void incrementQuestProgress(const std::string& objectiveId, int amount=1);
     void evaluateDirectives(); // Phase 4
