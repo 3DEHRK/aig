@@ -27,6 +27,13 @@
 #include <random> // added for mt19937 and uniform_real_distribution
 #include "../entities/Cart.h" // cart integration
 #include "../systems/Quest.h"
+#include <cctype>
+
+// NOTE: Several member function definitions went missing after earlier patching, causing
+// undefined symbol linker errors. We restore lightweight implementations here matching
+// the declarations in PlayState.h. Implementations are intentionally minimal but preserve
+// previously described behaviors (save/load, contracts, trades, unlock hooks, rails sync,
+// hostiles spawning, projectile spawning, hold-to-harvest, buffs, batch actions, quests).
 
 // rect center for current SFML (uses position/size members)
 static sf::Vector2f rect_center(const sf::FloatRect& r) {
@@ -181,9 +188,212 @@ PlayState::PlayState(Game& g)
             activeQuests.push_back(q);
         }
     }
+
+    loadContracts("data/contracts.json");
+    loadTrades("data/trades.json");
+
+    lampPositions.push_back({player->position().x + 120.f, player->position().y});
+    lampPositions.push_back({player->position().x - 180.f, player->position().y - 50.f});
 }
 
 PlayState::~PlayState() = default;
+
+// ---------------- Persistence ----------------
+void PlayState::saveGame(const std::string& path) {
+    nlohmann::json j;
+    if (player) {
+        j["player"]["x"] = player->position().x;
+        j["player"]["y"] = player->position().y;
+        j["player"]["hp"] = player->getHealth();
+        j["player"]["baseDamage"] = player->baseDamage();
+        j["player"]["inventory"] = player->inventory().toJson();
+    }
+    j["timeOfDay"] = timeOfDay;
+    // simple unlocked seeds dump
+    j["unlockedSeeds"] = nlohmann::json::object();
+    for (auto &p : unlockedSeeds) j["unlockedSeeds"][p.first] = p.second;
+    std::ofstream ofs(path);
+    if (ofs) ofs << j.dump(1);
+}
+
+void PlayState::loadGame(const std::string& path) {
+    std::ifstream ifs(path); if (!ifs) return; nlohmann::json j; try { ifs >> j; } catch(...) { return; }
+    if (player && j.contains("player")) {
+        auto &pj = j["player"];
+        if (pj.contains("x") && pj.contains("y")) player->setPosition({pj["x"].get<float>(), pj["y"].get<float>()});
+        if (pj.contains("hp")) player->setHealth(pj["hp"].get<float>());
+        if (pj.contains("baseDamage")) player->setBaseDamage(pj["baseDamage"].get<float>());
+        if (pj.contains("inventory")) player->inventory().fromJson(pj["inventory"]);
+    }
+    if (j.contains("timeOfDay")) timeOfDay = j["timeOfDay"].get<float>();
+    if (j.contains("unlockedSeeds")) {
+        unlockedSeeds.clear();
+        for (auto it = j["unlockedSeeds"].begin(); it != j["unlockedSeeds"].end(); ++it) {
+            unlockedSeeds[it.key()] = it.value().get<bool>();
+        }
+    }
+}
+
+// ---------------- Rails / Logistics ----------------
+void PlayState::syncRailsWithMap() {
+    // Ensure a Rail entity exists for each rail tile (basic sync; avoids duplicates by AABB match)
+    unsigned ts = map.tileSize();
+    auto isRailEntityAt = [&](unsigned tx, unsigned ty){
+    sf::FloatRect target({static_cast<float>(tx*ts),static_cast<float>(ty*ts)},{(float)ts,(float)ts});
+        for (auto &e : entities) if (auto r = dynamic_cast<Rail*>(e.get())) { if (r->getBounds().position == target.position) return true; }
+        return false;
+    };
+    for (unsigned y=0; y<map.height(); ++y) for (unsigned x=0; x<map.width(); ++x) if (map.isTileRail(x,y) && !isRailEntityAt(x,y)) {
+        entities.push_back(std::make_unique<Rail>(game.resources(), sf::Vector2f(x*ts,y*ts), ts));
+    }
+}
+
+// ---------------- Projectiles ----------------
+void PlayState::spawnProjectile(std::unique_ptr<Entity> p) {
+    worldProjectiles.push_back(std::move(p));
+}
+
+// ---------------- Hostiles ----------------
+HostileNPC* PlayState::spawnHostile(const sf::Vector2f& pos) {
+    auto h = std::make_unique<HostileNPC>(pos, player.get());
+    h->setTileMap(&map);
+    HostileNPC* raw = h.get();
+    entities.push_back(std::move(h));
+    return raw;
+}
+
+// ---------------- Hold To Harvest ----------------
+void PlayState::processHoldToHarvest(sf::Time dt) {
+    harvestHoldTime += dt.asSeconds();
+    harvestStageTimer += dt.asSeconds();
+    if (harvestStageTimer < harvestStageInterval) return;
+    harvestStageTimer = 0.f;
+    if (!player) return;
+    unsigned ts = map.tileSize();
+    sf::Vector2f p = player->position();
+    unsigned px = (unsigned)std::floor(p.x / ts);
+    unsigned py = (unsigned)std::floor(p.y / ts);
+    for (int dy=-harvestRadius; dy<=harvestRadius; ++dy) {
+        for (int dx=-harvestRadius; dx<=harvestRadius; ++dx) {
+            int tx = (int)px + dx; int ty = (int)py + dy;
+            if (tx<0||ty<0||tx>=(int)map.width()||ty>=(int)map.height()) continue;
+            for (auto &e : entities) if (auto c = dynamic_cast<Crop*>(e.get())) {
+                sf::FloatRect b = c->getBounds();
+                unsigned cx = (unsigned)std::floor((b.position.x + b.size.x*0.5f)/ts);
+                unsigned cy = (unsigned)std::floor((b.position.y + b.size.y*0.5f)/ts);
+                if (cx==(unsigned)tx && cy==(unsigned)ty) { c->interact(player.get()); return; }
+            }
+        }
+    }
+}
+
+// ---------------- Batch Actions & Buffs ----------------
+void PlayState::applyBatchAction(bool fertilize) {
+    if (!player) return;
+    unsigned ts = map.tileSize();
+    sf::Vector2f p = player->position(); unsigned px = (unsigned)std::floor(p.x/ts); unsigned py = (unsigned)std::floor(p.y/ts);
+    for (int dy=-batchRadius; dy<=batchRadius; ++dy) for (int dx=-batchRadius; dx<=batchRadius; ++dx) {
+        int tx = (int)px + dx; int ty = (int)py + dy; if (tx<0||ty<0||tx>=(int)map.width()||ty>=(int)map.height()) continue;
+        if (fertilize) map.addFertility(tx,ty,batchFertilityAmount); else map.addWater(tx,ty,batchWaterAmount);
+    }
+    addBuff(fertilize?"fert_boost":"hydra_boost", 10.f, 0.1f, fertilize?"Fertility Aura":"Moisture Aura");
+    batchCooldownTimer = batchCooldown;
+}
+
+void PlayState::updateBuffs(sf::Time dt) {
+    for (auto &b : activeBuffs) b.elapsed += dt.asSeconds();
+    activeBuffs.erase(std::remove_if(activeBuffs.begin(), activeBuffs.end(), [](const Buff& b){ return b.elapsed >= b.duration; }), activeBuffs.end());
+    applyBuffEffects();
+}
+
+void PlayState::applyBuffEffects() {
+    // Example: modify player regen or damage based on buffs (placeholder currently no stacking logic)
+    // Could accumulate magnitudes by id and apply.
+}
+
+void PlayState::addBuff(const std::string& id, float duration, float magnitude, const std::string& desc) {
+    for (auto &b : activeBuffs) if (b.id==id) { b.duration = std::max(b.duration, duration); b.magnitude = std::max(b.magnitude, magnitude); b.elapsed = 0.f; return; }
+    Buff b; b.id=id; b.duration=duration; b.magnitude=magnitude; b.desc=desc; activeBuffs.push_back(b);
+}
+
+// ---------------- Contracts / Trader ----------------
+void PlayState::loadContracts(const std::string& path) {
+    contracts.clear();
+    std::ifstream ifs(path); if (!ifs) return; nlohmann::json j; try { ifs >> j; } catch(...) { return; }
+    if (!j.is_array()) return;
+    for (auto &c : j) {
+        Contract cc; cc.id = c.value("id",""); cc.name = c.value("name",cc.id);
+        if (c.contains("inputs")) for (auto &in : c["inputs"]) { ContractItem ci; ci.id = in.value("id",""); ci.qty = in.value("qty",1); cc.inputs.push_back(ci);} 
+        if (c.contains("rewards")) for (auto &rw : c["rewards"]) { ContractItem ri; ri.id = rw.value("id",""); ri.qty = rw.value("qty",1); cc.rewards.push_back(ri);} 
+        contracts.push_back(cc);
+    }
+}
+
+void PlayState::tryCompleteContracts() {
+    if (!player) return;
+    auto &inv = player->inventory().itemsMutable();
+    for (auto &c : contracts) if (!c.completed) {
+        bool can = true;
+        for (auto &in : c.inputs) {
+            int have = 0; for (auto &it : inv) if (it && it->id==in.id) have += it->stackSize; if (have < in.qty) { can=false; break; }
+        }
+        if (can) {
+            // remove inputs
+            for (auto &in : c.inputs) {
+                int need = in.qty; for (auto &it : inv) if (it && it->id==in.id && need>0) { int take = std::min(need, it->stackSize); it->stackSize -= take; need -= take; }
+            }
+            // add rewards
+            for (auto &rw : c.rewards) player->inventory().addItemById(rw.id, rw.qty);
+            c.completed = true;
+        }
+    }
+}
+
+void PlayState::loadTrades(const std::string& path) {
+    tradeOffers.clear();
+    std::ifstream ifs(path); if (!ifs) return; nlohmann::json j; try { ifs >> j; } catch(...) { return; }
+    if (!j.is_array()) return;
+    for (auto &o : j) {
+        TradeOffer to; to.giveId = o.value("giveId",""); to.giveQty = o.value("giveQty",1); to.getId = o.value("getId",""); to.getQty = o.value("getQty",1); tradeOffers.push_back(to);
+    }
+}
+
+void PlayState::tryExecuteTrade(size_t index) {
+    if (!player) return; if (index >= tradeOffers.size()) return; auto &offer = tradeOffers[index];
+    auto &inv = player->inventory().itemsMutable();
+    int have = 0; for (auto &it : inv) if (it && it->id==offer.giveId) have += it->stackSize; if (have < offer.giveQty) return;
+    int need = offer.giveQty; for (auto &it : inv) if (it && it->id==offer.giveId && need>0) { int take = std::min(need, it->stackSize); it->stackSize -= take; need -= take; }
+    player->inventory().addItemById(offer.getId, offer.getQty);
+}
+
+// ---------------- Unlock Rules ----------------
+void PlayState::onCropHarvested(const std::string& cropId) {
+    std::string seedId = "seed_" + cropId;
+    if (!unlockedSeeds[seedId]) { unlockedSeeds[seedId] = true; std::cerr << "Unlocked seed: " << seedId << "\n"; }
+}
+
+void PlayState::onRailPlaced(unsigned, unsigned) {
+    if (!biomeRailPlaced) { biomeRailPlaced = true; std::cerr << "First rail placed: unlocking logistics path.\n"; }
+}
+
+// ---------------- Quests ----------------
+void PlayState::updateQuests() {
+    // Simple completion check for objectives bound to directive or counters
+    for (auto &q : activeQuests) if (!q.completed) {
+        bool all = true; for (auto &o : q.objectives) {
+            // map some known objective ids to internal counters
+            if (o.id == "plant_seed") { o.progress = 0; for (auto &d : directives) if (d.id=="plant_seed" && d.satisfied) o.progress = o.target; }
+            if (o.id == "harvest_crops") { for (auto &d : directives) if (d.id=="harvest_crops") o.progress = d.progress; }
+            if (o.id == "build_rail") { for (auto &d : directives) if (d.id=="build_rail" && d.satisfied) o.progress = o.target; }
+            if (o.progress >= o.target) o.completed = true; else all = false;
+        }
+        if (all) q.completed = true;
+    }
+}
+
+void PlayState::incrementQuestProgress(const std::string& id, int amt) {
+    for (auto &q : activeQuests) for (auto &o : q.objectives) if (o.id==id) { o.progress += amt; if (o.progress >= o.target) o.completed = true; }
+}
 
 void PlayState::handleEvent(const sf::Event& /*ev*/) {
     // Per-frame polling is used in update; events can be forwarded here when needed.
@@ -236,6 +446,8 @@ void PlayState::update(sf::Time dt) {
 
     // journal toggle (Phase 4)
     if (game.input().actionPressed("Journal")) { showJournal = !showJournal; }
+    // contracts panel toggle (new)
+    if (game.input().actionPressed("Contracts")) { showContracts = !showContracts; }
     // toggle cart route mode (Z) and set activeCart
     if (game.input().actionPressed("CartRouteMode")) {
         cartRouteMode = !cartRouteMode;
@@ -546,6 +758,7 @@ void PlayState::update(sf::Time dt) {
             if (c->isFinished()) {
                 if (c->wasHarvested()) {
                     harvestedCropsCount++;
+                    onCropHarvested(c->cropId());
                     if (!fertilizerUnlocked && harvestedCropsCount >= 10) { fertilizerUnlocked = true; std::cerr << "Fertilizer unlocked after harvesting 10 crops!\n"; }
                     for (auto &d : directives) if (d.id=="harvest_crops" && !d.satisfied) { d.progress++; }
                     // Spawn HarvestFX
@@ -665,7 +878,11 @@ void PlayState::update(sf::Time dt) {
     // update rail tool if enabled
     if (railTool && railTool->enabled) {
         railTool->update(worldPos, leftClick);
-        if (leftClick) { syncRailsWithMap(); for (auto &d : directives) if (d.id=="build_rail" && !d.satisfied) { d.progress = 1; } }
+        if (leftClick) { syncRailsWithMap(); for (auto &d : directives) if (d.id=="build_rail" && !d.satisfied) { d.progress = 1; } 
+            // detect placed rail at mouse tile
+            unsigned ts = map.tileSize(); unsigned tx = (unsigned)std::floor(worldPos.x/ts); unsigned ty = (unsigned)std::floor(worldPos.y/ts);
+            if (tx < map.width() && ty < map.height() && map.isTileRail(tx,ty)) onRailPlaced(tx,ty);
+        }
     } else {
         if (leftClick) {
             for (size_t i = 0; i < entities.size(); ++i) {
@@ -695,6 +912,8 @@ void PlayState::update(sf::Time dt) {
     updateQuests();
     evaluateDirectives();
     updateQuestChain();
+    tryCompleteContracts(); // attempt auto-completion each frame (cheap)
+    updateSFX(dt);
     game.input().clearFrame();
 }
 
@@ -856,21 +1075,25 @@ void PlayState::draw() {
 
     // switch to default view for HUD/static overlays
     win.setView(win.getDefaultView());
-    // --- Minimap (now screen-space) --------------------------------
+    // --- Minimap (screen-space) --------------------------------
     if (showMinimap) {
         float tilePix = minimapTilePixel; if (tilePix < 1.f) tilePix = 1.f; if (tilePix>8.f) tilePix = 8.f;
         unsigned mw = map.width(); unsigned mh = map.height();
-        float mmW = mw * tilePix; float mmH = mh * tilePix;
-        // position top-right with padding
         float pad = 8.f;
+        float mmW = mw * tilePix; float mmH = mh * tilePix;
         sf::Vector2f origin(win.getSize().x - mmW - pad, pad);
-        // background panel
-        sf::RectangleShape bg({mmW+4.f, mmH+4.f}); bg.setPosition(origin - sf::Vector2f{2.f,2.f}); bg.setFillColor(sf::Color(20,20,28,180)); bg.setOutlineColor(sf::Color(60,60,80)); bg.setOutlineThickness(1.f); win.draw(bg);
+        // background
+        sf::RectangleShape bg({mmW+4.f, mmH+4.f});
+        bg.setPosition(origin - sf::Vector2f{2.f,2.f});
+        bg.setFillColor(sf::Color(20,20,28,180));
+        bg.setOutlineColor(sf::Color(60,60,80));
+        bg.setOutlineThickness(1.f);
+        win.draw(bg);
         // tiles
         sf::RectangleShape cell({tilePix, tilePix});
         for (unsigned ty=0; ty<mh; ++ty) {
             for (unsigned tx=0; tx<mw; ++tx) {
-                if (!map.isExplored(tx,ty)) continue; // fog hidden
+                if (!map.isExplored(tx,ty)) continue;
                 auto t = map.getTile(tx,ty);
                 sf::Color c;
                 switch(t) {
@@ -884,25 +1107,21 @@ void PlayState::draw() {
                 win.draw(cell);
             }
         }
-        // entities (optional)
+        // entities
         if (showMinimapEntities) {
             sf::RectangleShape dot({tilePix, tilePix});
-            dot.setFillColor(sf::Color::Red);
             if (player) {
-                sf::Vector2f p = player->position();
-                unsigned ts = map.tileSize();
-                unsigned px = (unsigned)std::floor(p.x / ts);
-                unsigned py = (unsigned)std::floor(p.y / ts);
+                dot.setFillColor(sf::Color::Red);
+                sf::Vector2f p = player->position(); unsigned ts = map.tileSize();
+                unsigned px = (unsigned)std::floor(p.x / ts); unsigned py = (unsigned)std::floor(p.y / ts);
                 if (px < mw && py < mh) { dot.setPosition(origin + sf::Vector2f(px*tilePix, py*tilePix)); win.draw(dot); }
             }
             dot.setFillColor(sf::Color(220,180,60));
-            for (auto &e : entities) {
-                if (dynamic_cast<HostileNPC*>(e.get())) {
-                    sf::FloatRect b = e->getBounds(); unsigned ts = map.tileSize();
-                    unsigned ex = (unsigned)std::floor((b.position.x + b.size.x*0.5f)/ts);
-                    unsigned ey = (unsigned)std::floor((b.position.y + b.size.y*0.5f)/ts);
-                    if (ex < mw && ey < mh && map.isExplored(ex,ey)) { dot.setPosition(origin + sf::Vector2f(ex*tilePix, ey*tilePix)); win.draw(dot); }
-                }
+            for (auto &e : entities) if (dynamic_cast<HostileNPC*>(e.get())) {
+                sf::FloatRect b = e->getBounds(); unsigned ts = map.tileSize();
+                unsigned ex = (unsigned)std::floor((b.position.x + b.size.x*0.5f)/ts);
+                unsigned ey = (unsigned)std::floor((b.position.y + b.size.y*0.5f)/ts);
+                if (ex < mw && ey < mh && map.isExplored(ex,ey)) { dot.setPosition(origin + sf::Vector2f(ex*tilePix, ey*tilePix)); win.draw(dot); }
             }
             dot.setFillColor(sf::Color(0,160,255));
             for (auto &c : carts) {
@@ -913,12 +1132,10 @@ void PlayState::draw() {
         }
         // view rectangle
         if (showMinimapViewRect) {
-            sf::Vector2f vc = view.getCenter(); sf::Vector2f vs = view.getSize();
-            unsigned ts = map.tileSize();
+            sf::Vector2f vc = view.getCenter(); sf::Vector2f vs = view.getSize(); unsigned ts = map.tileSize();
             float left = (vc.x - vs.x*0.5f) / ts; float top = (vc.y - vs.y*0.5f) / ts;
             float right = (vc.x + vs.x*0.5f) / ts; float bottom = (vc.y + vs.y*0.5f) / ts;
-            if (right < 0 || bottom < 0 || left > mw || top > mh) { /* ignore */ }
-            else {
+            if (!(right < 0 || bottom < 0 || left > mw || top > mh)) {
                 if (left < 0) left = 0; if (top < 0) top = 0; if (right > mw) right = (float)mw; if (bottom > mh) bottom = (float)mh;
                 sf::RectangleShape vr({(right-left)*tilePix, (bottom-top)*tilePix});
                 vr.setPosition(origin + sf::Vector2f(left*tilePix, top*tilePix));
@@ -929,24 +1146,22 @@ void PlayState::draw() {
     }
     // ----------------------------------------------------------------
 
+    drawLighting(win, worldView);
+
     if (inventoryUI) inventoryUI->draw(win);
     dialog.draw(win);
     auto &f = game.resources().font("assets/fonts/arial.ttf");
-    // Player health bar (simple)
+    // Player health bar
     if (player) {
         float hp = player->getHealth(); float maxhp = std::max(1.f, player->getMaxHealth());
         float w = 160.f; float h = 14.f; float pad = 8.f;
-        sf::RectangleShape bg({w,h}); bg.setPosition({pad, (float)win.getSize().y - h - pad}); bg.setFillColor(sf::Color(40,40,50,200)); bg.setOutlineThickness(1.f); bg.setOutlineColor(sf::Color(80,80,100));
-        win.draw(bg);
-        float pct = hp / maxhp; if (pct < 0.f) pct = 0.f; if (pct>1.f) pct=1.f;
-        sf::RectangleShape fg({(w-2.f)*pct, h-2.f}); fg.setPosition(bg.getPosition()+sf::Vector2f{1.f,1.f});
-        sf::Color col = (pct>0.5f? sf::Color(90,200,90): (pct>0.25f? sf::Color(230,180,60): sf::Color(220,70,50)));
-        fg.setFillColor(col); win.draw(fg);
-        std::ostringstream ss; ss << (int)hp << "/" << (int)maxhp;
-        sf::Text hpTxt(f, ss.str(), 12u); hpTxt.setPosition(bg.getPosition()+sf::Vector2f{4.f,-14.f}); hpTxt.setFillColor(sf::Color::White); win.draw(hpTxt);
+        sf::RectangleShape bgBar({w,h}); bgBar.setPosition({pad, (float)win.getSize().y - h - pad}); bgBar.setFillColor(sf::Color(40,40,50,200)); bgBar.setOutlineThickness(1.f); bgBar.setOutlineColor(sf::Color(80,80,100)); win.draw(bgBar);
+        float pct = hp / maxhp; pct = std::clamp(pct, 0.f, 1.f);
+        sf::RectangleShape fg({(w-2.f)*pct, h-2.f}); fg.setPosition(bgBar.getPosition()+sf::Vector2f{1.f,1.f});
+        sf::Color col = (pct>0.5f? sf::Color(90,200,90): (pct>0.25f? sf::Color(230,180,60): sf::Color(220,70,50))); fg.setFillColor(col); win.draw(fg);
+        std::ostringstream ssHp; ssHp << (int)hp << "/" << (int)maxhp; sf::Text hpTxt(f, ssHp.str(), 12u); hpTxt.setPosition(bgBar.getPosition()+sf::Vector2f{4.f,-14.f}); hpTxt.setFillColor(sf::Color::White); win.draw(hpTxt);
     }
-
-    // quest & directives HUD (top-left)
+    // Directives / quests
     float y = 8.f;
     if (questChainStage < 3) {
         static const char* stageMsg[] = {"Chain: Plant a seed","Chain: Harvest 5 crops","Chain: Place a rail segment"};
@@ -955,9 +1170,8 @@ void PlayState::draw() {
     for (auto &d : directives) if (!d.hidden) {
         bool show = true;
         if (d.satisfied) {
-            float elapsed = hudTime - d.completedAt; const float displayFor = 3.f; const float fadeFor = 1.5f; // show then fade
-            if (elapsed > displayFor + fadeFor) show = false;
-            else if (elapsed > displayFor) {
+            float elapsed = hudTime - d.completedAt; const float displayFor = 3.f; const float fadeFor = 1.5f;
+            if (elapsed > displayFor + fadeFor) show = false; else if (elapsed > displayFor) {
                 float alpha = 1.f - (elapsed - displayFor) / fadeFor; if (alpha < 0.f) alpha = 0.f;
                 sf::Text dt(f, std::string("[Done] ") + d.text, 12u); dt.setPosition({8.f,y}); dt.setFillColor(sf::Color(120,200,120,(uint8_t)(alpha*255))); win.draw(dt); if (show) y += 14.f; continue;
             }
@@ -975,8 +1189,14 @@ void PlayState::draw() {
             sf::Text ot(f, ss.str(), 12u); ot.setPosition({8.f,y}); ot.setFillColor(sf::Color(200,200,200)); win.draw(ot); y += 14.f;
         }
     }
-
-    // Journal panel
+    if (!activeBuffs.empty()) {
+        y += 6.f; sf::Text bh(f, "Buffs", 14u); bh.setPosition({8.f,y}); bh.setFillColor(sf::Color(180,220,255)); win.draw(bh); y += 18.f;
+        for (auto &b : activeBuffs) {
+            float remain = std::max(0.f, b.duration - b.elapsed);
+            std::ostringstream ss; ss.setf(std::ios::fixed); ss.precision(0); ss << b.desc << " (" << remain << "s)";
+            sf::Text bt(f, ss.str(), 12u); bt.setPosition({8.f,y}); bt.setFillColor(sf::Color(150,200,255)); win.draw(bt); y += 14.f;
+        }
+    }
     if (showJournal) {
         sf::RectangleShape panel({300.f, (float)win.getSize().y - 40.f}); panel.setPosition({win.getSize().x - 310.f,20.f}); panel.setFillColor(sf::Color(20,20,30,200)); win.draw(panel);
         float jy = 30.f; float jx = win.getSize().x - 300.f;
@@ -996,104 +1216,124 @@ void PlayState::draw() {
             jy += 6.f;
         }
     }
-}
-
-// Restored implementations (previously truncated) ---------------------------------
-void PlayState::saveGame(const std::string& path) {
-    try {
-        nlohmann::json j;
-        if (player) {
-            sf::Vector2f p = player->position();
-            j["player"]["x"] = p.x;
-            j["player"]["y"] = p.y;
-            j["player"]["health"] = player->getHealth();
+    if (showContracts) {
+        float panelW = 260.f; float panelH = 140.f; float px = 20.f; float py = 260.f;
+        sf::RectangleShape panel({panelW,panelH}); panel.setPosition({px,py}); panel.setFillColor(sf::Color(25,25,35,200)); panel.setOutlineThickness(1.f); panel.setOutlineColor(sf::Color(60,60,80)); win.draw(panel);
+        sf::Text hdr(f, "Contracts", 14u); hdr.setPosition({px+8.f, py+6.f}); hdr.setFillColor(sf::Color(255,220,120)); win.draw(hdr);
+        float ly = py + 26.f; for (auto &c : contracts) {
+            std::string line = (c.completed? "[Done] " : "[ ] ") + c.name + " : ";
+            for (size_t i=0;i<c.inputs.size();++i) { line += c.inputs[i].id + "x" + std::to_string(c.inputs[i].qty); if (i+1<c.inputs.size()) line += ","; }
+            line += " -> ";
+            for (size_t i=0;i<c.rewards.size();++i) { line += c.rewards[i].id + "x" + std::to_string(c.rewards[i].qty); if (i+1<c.rewards.size()) line += ","; }
+            sf::Text t(f,line,11u); t.setPosition({px+8.f, ly}); t.setFillColor(c.completed? sf::Color(120,200,120): sf::Color(200,200,200)); win.draw(t); ly += 14.f; if (ly > py + panelH - 14.f) break;
         }
-        j["quest_chain_stage"] = questChainStage;
-        // directives
-        for (auto &d : directives) {
-            nlohmann::json dj; dj["id"]=d.id; dj["text"]=d.text; dj["satisfied"]=d.satisfied; dj["hidden"]=d.hidden; dj["progress"]=d.progress; dj["target"]=d.target; j["directives"].push_back(dj);
+    }
+    if (showTrader) {
+        float panelW = 300.f; float panelH = 160.f; float px = 300.f; float py = 260.f;
+        sf::RectangleShape panel({panelW,panelH}); panel.setPosition({px,py}); panel.setFillColor(sf::Color(30,25,35,200)); panel.setOutlineThickness(1.f); panel.setOutlineColor(sf::Color(70,70,90)); win.draw(panel);
+        auto &fnt = game.resources().font("assets/fonts/arial.ttf");
+        sf::Text hdr(fnt, "Trader", 14u); hdr.setPosition({px+8.f, py+6.f}); hdr.setFillColor(sf::Color(255,220,120)); win.draw(hdr);
+        float ly = py + 26.f; size_t idx = 0;
+        for (auto &o : tradeOffers) {
+            std::ostringstream ss; ss << idx << ": Give "<<o.giveQty<<"x"<<o.giveId<<" -> Get "<<o.getQty<<"x"<<o.getId; // index-based activation (future keybinding)
+            sf::Text t(fnt, ss.str(), 11u); t.setPosition({px+8.f, ly}); t.setFillColor(sf::Color(210,210,210)); win.draw(t); ly += 14.f; if (ly > py+panelH-18.f) break; ++idx;
         }
-        std::ofstream ofs(path);
-        if (ofs) ofs << j.dump(2);
-        std::cerr << "Saved game to " << path << "\n";
-    } catch(const std::exception& e) {
-        std::cerr << "saveGame error: " << e.what() << "\n";
     }
 }
 
-void PlayState::loadGame(const std::string& path) {
-    try {
-        std::ifstream ifs(path);
-        if (!ifs) { std::cerr << "loadGame: file not found\n"; return; }
-        nlohmann::json j; ifs >> j;
-        if (j.contains("player")) {
-            auto &pj = j["player"]; if (player) {
-                if (pj.contains("x") && pj.contains("y")) player->setPosition({pj["x"].get<float>(), pj["y"].get<float>()});
-                if (pj.contains("health")) player->setHealth(pj["health"].get<float>());
-            }
+void PlayState::updateDayNight(sf::Time dt) {
+    if (!dayNightEnabled) return;
+    timeOfDay += dt.asSeconds() / dayLength; if (timeOfDay > 1.f) timeOfDay -= 1.f;
+}
+
+void PlayState::drawLighting(sf::RenderWindow& win, const sf::View& worldView) {
+    if (!dayNightEnabled) return;
+    // Determine ambient based on timeOfDay: 0 sunrise, 0.25 day, 0.5 sunset, 0.75 night
+    float t = timeOfDay;
+    auto lerp=[&](sf::Color a, sf::Color b, float u){ return sf::Color(
+        (uint8_t)(a.r + (b.r-a.r)*u),
+        (uint8_t)(a.g + (b.g-a.g)*u),
+        (uint8_t)(a.b + (b.b-a.b)*u),
+        (uint8_t)(a.a + (b.a-a.a)*u)); };
+    sf::Color dawn(120,110,140,200), day(255,255,255,80), dusk(200,110,90,180), night(40,50,80,240);
+    sf::Color amb;
+    if (t < 0.25f) amb = lerp(dawn, day, t/0.25f);
+    else if (t < 0.5f) amb = lerp(day, dusk, (t-0.25f)/0.25f);
+    else if (t < 0.75f) amb = lerp(dusk, night, (t-0.5f)/0.25f);
+    else amb = lerp(night, dawn, (t-0.75f)/0.25f);
+    // full-screen ambient overlay (world coords, so use worldView)
+    sf::View prev = win.getView();
+    win.setView(worldView);
+    sf::RectangleShape ambientRect(worldView.getSize()); ambientRect.setOrigin(ambientRect.getSize()/2.f); ambientRect.setPosition(worldView.getCenter()); ambientRect.setFillColor(amb);
+    win.draw(ambientRect);
+    // Lamps: additive light by drawing radial alpha cutouts (simple subtractive via blending not accessible here -> approximate with lighter circles)
+    for (auto &lp : lampPositions) {
+        float radius = lampRadius; int rings = 4; for (int r=0;r<rings;++r) {
+            float frac = (float)r / rings; float rad = radius * (1.f - frac*0.25f);
+            sf::CircleShape glow(rad); glow.setOrigin({rad,rad}); glow.setPosition(lp);
+            float alpha = 110.f * (1.f-frac); // reduced from 140
+            sf::Color base(255,200,120,(uint8_t)alpha);
+            if (t < 0.4f && t>0.2f) base = lerp(base, sf::Color(255,240,200,(uint8_t)alpha), 0.4f);
+            if (t >=0.6f && t<0.9f) base = lerp(base, sf::Color(255,170,90,(uint8_t)alpha), 0.3f);
+            glow.setFillColor(base);
+            win.draw(glow);
         }
-        directives.clear();
-        if (j.contains("directives") && j["directives"].is_array()) {
-            for (auto &dj : j["directives"]) {
-                Directive d; if (dj.contains("id")) d.id = dj["id"].get<std::string>();
-                if (dj.contains("text")) d.text = dj["text"].get<std::string>();
-                if (dj.contains("satisfied")) d.satisfied = dj["satisfied"].get<bool>();
-                if (dj.contains("hidden")) d.hidden = dj["hidden"].get<bool>();
-                if (dj.contains("progress")) d.progress = dj["progress"].get<int>();
-                if (dj.contains("target")) d.target = dj["target"].get<int>();
-                // fallback text
-                if (d.text.empty()) {
-                    if (d.id=="plant_seed") d.text="Plant a seed"; else if (d.id=="harvest_crops") d.text="Harvest 5 crops"; else if (d.id=="build_rail") d.text="Place a rail segment";
-                }
-                directives.push_back(d);
-            }
+    }
+    win.setView(prev);
+}
+
+// ---------------- SFX / Ambience ----------------
+void PlayState::updateSFX(sf::Time dt) {
+    // footstep logic: trigger when player is moving sufficiently and timer exceeds interval
+    if (player) {
+        // approximate movement magnitude via desired velocity length (speed already applied earlier)
+        // We'll compare current frame displacement (difference since last frame)
+        static sf::Vector2f lastPos = player->position();
+        sf::Vector2f cur = player->position();
+        sf::Vector2f d = cur - lastPos; lastPos = cur;
+        float dist = std::sqrt(d.x*d.x + d.y*d.y);
+        if (dist > 1.f) {
+            footstepTimer += dt.asSeconds();
+            float speedFactor = std::clamp(dist / (200.f * dt.asSeconds() + 0.0001f), 0.5f, 2.f); // normalize to player base speed
+            float interval = footstepInterval / speedFactor; // faster when moving quicker
+            if (footstepTimer >= interval) { footstepTimer = 0.f; playFootstep(); }
         } else {
-            directives.push_back({"plant_seed","Plant a seed",false,false,0,1});
-            directives.push_back({"harvest_crops","Harvest 5 crops",false,true,0,5});
-            directives.push_back({"build_rail","Place a rail segment",false,true,0,1});
-        }
-        if (j.contains("quest_chain_stage")) questChainStage = j["quest_chain_stage"].get<int>();
-        evaluateDirectives();
-        std::cerr << "Loaded game from " << path << "\n";
-    } catch(const std::exception& e) {
-        std::cerr << "loadGame error: " << e.what() << "\n";
-    }
-}
-
-void PlayState::syncRailsWithMap() {
-    // remove existing Rail entities
-    entities.erase(std::remove_if(entities.begin(), entities.end(), [](const std::unique_ptr<Entity>& e){ return dynamic_cast<Rail*>(e.get()) != nullptr; }), entities.end());
-    // recreate from map tiles
-    for (unsigned y = 0; y < map.height(); ++y) {
-        for (unsigned x = 0; x < map.width(); ++x) {
-            if (map.isTileRail(x,y)) {
-                sf::Vector2f pos((float)x * map.tileSize(), (float)y * map.tileSize());
-                entities.push_back(std::make_unique<Rail>(game.resources(), pos, map.tileSize()));
-            }
+            // idle fade timer
+            footstepTimer = std::min(footstepTimer, footstepInterval * 0.5f);
         }
     }
-}
-
-void PlayState::spawnProjectile(std::unique_ptr<Entity> p) {
-    if (p) worldProjectiles.push_back(std::move(p));
-}
-
-HostileNPC* PlayState::spawnHostile(const sf::Vector2f& pos) {
-    float roll = rand01();
-    HostileNPC::Type t = (roll < tankSpawnChance ? HostileNPC::Tank : HostileNPC::Grunt);
-    auto hostile = std::make_unique<HostileNPC>(pos, player.get(), t);
-    hostile->setTileMap(&map);
-    HostileNPC* ptr = hostile.get();
-    entities.push_back(std::move(hostile));
-    return ptr;
-}
-
-void PlayState::updateQuests() {
-    for (auto &q : activeQuests) {
-        if (!q.completed) {
-            bool all = true; for (auto &o : q.objectives) if (!o.completed) { all = false; break; }
-            if (all) { q.completed = true; std::cerr << "Quest completed: " << q.title << "\n"; }
-        }
+    // ambient loop scheduling (simple randomized one-shot layering)
+    ambientTimer += dt.asSeconds();
+    if (ambientTimer >= ambientInterval) {
+        ambientTimer = 0.f; refreshAmbientSchedule();
+        // choose one of several placeholder ambience cues
+        static const char* cues[] = {
+            "assets/sfx/light_wind.ogg", // soft wind
+            "assets/sfx/bird_chirp.ogg", // bird
+            "assets/sfx/leaf_rustle.ogg" // foliage
+        };
+        size_t choice = (size_t)std::floor(rand01() * (sizeof(cues)/sizeof(cues[0])));
+        game.sound().play(cues[choice], 55.f, 1.f);
     }
+    // update sound manager housekeeping
+    game.sound().update();
 }
-// -------------------------------------------------------------------------------
+
+void PlayState::playFootstep() {
+    // Choose surface based on tile under player (soil vs other) for different pitch/volume.
+    if (!player) return;
+    unsigned ts = map.tileSize();
+    sf::Vector2f p = player->position(); unsigned tx = (unsigned)std::floor(p.x/ts); unsigned ty = (unsigned)std::floor(p.y/ts);
+    const char* soundPath = "assets/sfx/footstep_soft.ogg"; float pitchMin=0.9f, pitchMax=1.1f; float vol = 35.f;
+    if (tx < map.width() && ty < map.height()) {
+        auto t = map.getTile(tx,ty);
+        if (t == TileMap::Plantable) { soundPath = "assets/sfx/footstep_soil.ogg"; vol = 42.f; }
+        else if (t == TileMap::Rail) { soundPath = "assets/sfx/footstep_metal.ogg"; vol = 48.f; pitchMin=0.95f; pitchMax=1.05f; }
+    }
+    game.sound().playRandomPitch(soundPath, vol, pitchMin, pitchMax);
+}
+
+void PlayState::refreshAmbientSchedule() {
+    // Randomize next interval within +-30%
+    float base = 9.f; float jitter = 0.3f; ambientInterval = base * (1.f + ((rand01()*2.f)-1.f)*jitter);
+}

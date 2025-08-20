@@ -157,6 +157,23 @@ private:
     float batchCooldown = 2.f; // seconds between uses
     float batchCooldownTimer = 0.f;
 
+    // Global Buff System
+    struct Buff { std::string id; float duration; float elapsed=0.f; float magnitude=0.f; std::string desc; };
+    std::vector<Buff> activeBuffs; // active global buffs
+
+    // Contract system
+    struct ContractItem { std::string id; int qty; };
+    struct Contract { std::string id; std::string name; std::vector<ContractItem> inputs; std::vector<ContractItem> rewards; bool completed=false; };
+    std::vector<Contract> contracts; // loaded contracts
+    bool showContracts = false; // toggle display
+
+    // Trader system (progression next feature)
+    struct TradeOffer { std::string giveId; int giveQty=0; std::string getId; int getQty=0; };
+    std::vector<TradeOffer> tradeOffers; // loaded from trades.json
+    bool showTrader = false; // toggle trader panel
+    void loadTrades(const std::string& path);
+    void tryExecuteTrade(size_t index); // attempt trade by index
+
     void updateQuests();
     void incrementQuestProgress(const std::string& objectiveId, int amount=1);
     void evaluateDirectives(); // Phase 4
@@ -169,5 +186,39 @@ private:
 
     void applyBatchAction(bool fertilize);
 
+    void updateBuffs(sf::Time dt);
+    void applyBuffEffects();
+    void addBuff(const std::string& id, float duration, float magnitude, const std::string& desc);
+
+    void loadContracts(const std::string& path);
+    void tryCompleteContracts();
+
+    // Unlock rules
+    std::unordered_map<std::string,bool> unlockedSeeds; // seed id -> unlocked
+    bool biomeRailPlaced = false; // track first rail per biome (placeholder single biome)
+    void onCropHarvested(const std::string& cropId);
+    void onRailPlaced(unsigned tx, unsigned ty);
+
     std::vector<HarvestFX> harvestFxList; // active harvest effects
+
+    // Day/Night Cycle
+    float timeOfDay = 0.f; // 0..1
+    float dayLength = 600.f; // seconds for full cycle
+    bool dayNightEnabled = true;
+    std::vector<sf::Vector2f> lampPositions; // static lamp world positions
+    float lampRadius = 140.f; // reduced light falloff radius (was 180)
+    void updateDayNight(sf::Time dt);
+    void drawLighting(sf::RenderWindow& win, const sf::View& worldView);
+
+    // Wind sway
+    float windTime = 0.f;
+
+    // SFX / Ambience
+    float footstepTimer = 0.f; // accumulates movement for step sounds
+    float footstepInterval = 0.42f; // seconds between footstep sounds at base speed
+    float ambientTimer = 0.f; // timer for one-shot ambient flavor
+    float ambientInterval = 9.f; // base interval (randomized)
+    void updateSFX(sf::Time dt);
+    void playFootstep();
+    void refreshAmbientSchedule();
 };

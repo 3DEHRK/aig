@@ -1,0 +1,16 @@
+{
+  "contracts": [
+    {
+      "id": "starter_wheat_turnin",
+      "name": "Deliver Wheat",
+      "inputs": [ {"id": "crop_wheat", "qty": 5} ],
+      "rewards": [ {"id": "seed_wheat", "qty": 3}, {"id": "coin", "qty": 10} ]
+    },
+    {
+      "id": "herb_bundle",
+      "name": "Herbal Starter",
+      "inputs": [ {"id": "crop_herb", "qty": 4} ],
+      "rewards": [ {"id": "coin", "qty": 25} ]
+    }
+  ]
+}

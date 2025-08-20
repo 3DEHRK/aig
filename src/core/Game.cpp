@@ -3,6 +3,7 @@
 #include "../states/PlayState.h"
 #include "../resources/ResourceManager.h"
 #include "../input/InputManager.h"
+#include "../systems/SoundManager.h"
 #include <variant>
 #include <type_traits>
 #include <nlohmann/json.hpp>
@@ -82,6 +83,7 @@ Game::Game()
 {
     resourceManager = std::make_unique<ResourceManager>();
     inputManager = std::make_unique<InputManager>();
+    soundManager = std::make_unique<SoundManager>();
     loadBindings(*inputManager);
     applyDefaultBindings(*inputManager);
     LoadCustomBindings(*inputManager, "bindings.saved.json");
@@ -157,6 +159,7 @@ void Game::render() {
 
 ResourceManager& Game::resources() { return *resourceManager; }
 InputManager& Game::input() { return *inputManager; }
+SoundManager& Game::sound() { return *soundManager; }
 void Game::setState(std::unique_ptr<State> s) { currentState = std::move(s); }
 void Game::pushTemporaryState(std::unique_ptr<State> s) { savedState = std::move(currentState); currentState = std::move(s); }
 void Game::popTemporaryState() { if (savedState) { currentState = std::move(savedState); } }

@@ -36,9 +36,11 @@ public:
     bool wasHarvested() const { return harvested; }
     bool isWithered() const { return withered; }
     int quality() const { return qualityTier; }
+    const std::string& cropId() const { return id; }
 
     static void loadConfigs(ResourceManager& res, const std::string& path); // load JSON configs
     static const CropConfig* getConfig(const std::string& id);
+    static void setWindParams(float time, float amplitude, float frequency);
 
 private:
     TileMap* mapPtr = nullptr; // map for soil queries
@@ -56,4 +58,5 @@ private:
     int yield = 1; // base yield (can be modified by fertility)
     int qualityTier = 1; // new quality
     sf::Vector2f baseSize {20.f,20.f};
+    sf::Vector2f baseWorldPos; // for wind sway reference
 };

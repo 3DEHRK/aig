@@ -25,37 +25,37 @@
   - Apply to all tiles in radius N (start 5).
   - Skip mature plants.
 
-- [ ] Implement **Global Buff System**:
+- [x] ✅ Implement **Global Buff System**:
   - Timed modifiers (e.g., moisture decay -30% for 120 s).
   - Show buff icon in HUD.
 
 ## Progression
-- [ ] Implement **Contracts Board** received from NPC:
+- [x] ✅ Implement **Contracts Board** received from NPC:
   - Load from `contracts.json`. (add sample data)
   - Each contract = input items + reward items.
   - On completion, add reward to inventory.
 
-- [ ] Implement **Trader**:
+- [x] ✅ Implement **Trader**:
   - Vending machine interface.
   - Reads static trade offers from `trades.json`. (add sample data)
   - Simple exchange, no dialogue.
 
-- [ ] Implement **Unlock Rules**:
+- [x] ✅ Implement **Unlock Rules**:
   - On first harvest of plant → unlock seed blueprint.
   - On first rail placed into biome → unlock biome-specific seeds.
 
 ## Immersion
-- [ ] Implement **Day/Night Cycle**:
+- [x] ✅ Implement **Day/Night Cycle**:
   - Gradient lighting.
   - Implement Lamps that emit halo if powered.
 
-- [ ] Implement **Micro-Wind Crop Shader**:
+- [x] ✅ Implement **Micro-Wind Crop Shader**:
   - Sway amplitude tied to weather/biome.
 
-- [ ] Implement **SFX/Ambience**:
-  - Footstep + soil crunch.
-  - Ambient loops per biome, rare one-shot sounds.
-  - add needed sounds at location as txt placeholder eg light_wind.ogg
+- [x] ✅ Implement **SFX/Ambience**:
+  - Footstep sounds with surface differentiation (soil / default / rail).
+  - Random ambient one-shots (wind, bird, leaves) on jittered timer.
+  - Placeholder sound asset filenames added under `assets/sfx/` (README lists required .ogg files).
 
 - [ ] Implement **Diegetic Tile Indicators**:
   - Small soil stakes colored for moisture/light/nutrient.

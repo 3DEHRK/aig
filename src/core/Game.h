@@ -7,6 +7,7 @@
 class State;
 class ResourceManager;
 class InputManager;
+class SoundManager;
 
 class Game {
 public:
@@ -16,6 +17,7 @@ public:
   sf::RenderWindow& getWindow() { return window; }
   ResourceManager& resources();
   InputManager& input();
+  SoundManager& sound();
   void setState(std::unique_ptr<State> s);  // allow external state change
   void pushTemporaryState(std::unique_ptr<State> s);  // save current, replace with temp
   void popTemporaryState();  // restore saved if present
@@ -32,5 +34,6 @@ private:
   std::unique_ptr<State> savedState;  // holds previous PlayState during temporary realm
   std::unique_ptr<ResourceManager> resourceManager;
   std::unique_ptr<InputManager> inputManager;
+  std::unique_ptr<SoundManager> soundManager;
   sf::View camera;
 };

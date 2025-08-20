@@ -82,6 +82,9 @@ static float stageProgressFactor(const TileMap* map, unsigned tileX, unsigned ti
     return std::min(4.f, mFactor * fFactor);
 }
 
+static float g_windTime = 0.f; static float g_windAmp = 4.f; static float g_windFreq = 0.8f;
+void Crop::setWindParams(float time, float amplitude, float frequency) { g_windTime = time; g_windAmp = amplitude; g_windFreq = frequency; }
+
 Crop::Crop(ResourceManager& /*resources*/, TileMap& map, const sf::Vector2f& pos, const std::string& cropId, int stages, float totalTime)
 : mapPtr(&map), id(cropId), maxStages(stages), totalGrowthTime(totalTime) {
     if (auto *tj = g_getTunablesJson()) {
@@ -101,6 +104,7 @@ Crop::Crop(ResourceManager& /*resources*/, TileMap& map, const sf::Vector2f& pos
         maxStages = (int)cfg->stageDurations.size();
         if (maxStages < 1) { maxStages = 1; }
     }
+    baseWorldPos = pos;
 }
 
 void Crop::update(sf::Time dt) {
@@ -155,6 +159,11 @@ void Crop::update(sf::Time dt) {
             shape.setFillColor(c);
             if (currentStage == maxStages-1) { c.g = (uint8_t)std::min(255, int(c.g) + 30); shape.setFillColor(c); }
         }
+    }
+    // apply micro-wind sway (skip if harvested/finished)
+    if (!harvested) {
+        float sway = std::sin((baseWorldPos.x*0.15f + g_windTime * g_windFreq) ) * g_windAmp * (0.4f + 0.6f * (float)currentStage / std::max(1, maxStages-1));
+        sf::Vector2f p = baseWorldPos; p.x += sway; shape.setPosition(p);
     }
 }
 

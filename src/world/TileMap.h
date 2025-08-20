@@ -46,6 +46,9 @@ public:
     void setSoilTunables(float moistureTarget, float moistureDecayPerSec, float fertilityTarget, float fertilityRegenPerSec) {
         soilMoistureTarget = moistureTarget; soilMoistureDecay = moistureDecayPerSec; soilFertilityTarget = fertilityTarget; soilFertilityRegen = fertilityRegenPerSec; }
 
+    void setMoistureDecayMultiplier(float m) { soilMoistureDecayMult = m; }
+    float moistureDecayMultiplier() const { return soilMoistureDecayMult; }
+
     nlohmann::json toJson() const; // defined in cpp
     void fromJson(const nlohmann::json& j); // defined in cpp
 
@@ -75,4 +78,5 @@ private:
     float soilFertilityTarget = 0.5f;
     float soilFertilityRegen = 0.005f; // per second when below target
     sf::Texture* railTexture = nullptr; // texture for rail tiles
+    float soilMoistureDecayMult = 1.f; // new multiplier applied in updateSoil
 };

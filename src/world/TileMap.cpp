@@ -311,7 +311,7 @@ void TileMap::updateSoil(sf::Time dt) {
     float ds = dt.asSeconds();
     for (size_t i=0;i<soilMoisture.size();++i) {
         float &m = soilMoisture[i];
-        if (m > soilMoistureTarget) m = std::max(soilMoistureTarget, m - soilMoistureDecay * ds);
+        if (m > soilMoistureTarget) m = std::max(soilMoistureTarget, m - soilMoistureDecay * soilMoistureDecayMult * ds);
         else if (m < soilMoistureTarget) m = std::min(soilMoistureTarget, m + (soilMoistureDecay*0.5f) * ds);
     }
     float fertStep = soilFertilityRegen * ds;

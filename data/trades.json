@@ -1,0 +1,6 @@
+{
+  "trades": [
+    { "give_id": "fiber", "give_qty": 5, "get_id": "seed_wheat", "get_qty": 1 },
+    { "give_id": "crystal_raw", "give_qty": 1, "get_id": "fert_basic", "get_qty": 2 }
+  ]
+}
