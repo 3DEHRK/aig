@@ -14,6 +14,7 @@ public:
     Player(InputManager& input, ResourceManager& resources);
     void update(sf::Time) override; // processes input and sets desired movement (but does not commit movement)
     void draw(sf::RenderWindow&) override;
+    void drawHUD(sf::RenderWindow& window, const sf::Vector2f& screenPos); // draw at fixed screen position (ignores world transform)
     sf::FloatRect getBounds() const override;
     void interact(Entity* other) override;
     bool wantsToInteract() const;

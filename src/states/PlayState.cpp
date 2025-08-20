@@ -711,11 +711,10 @@ void PlayState::draw() {
     map.draw(win, showRailOverlay);
     for (auto &e : entities) e->draw(win);
     for (auto &c : carts) c->draw(win);
-    if (player) player->draw(win); // moved after carts
+    if (player) player->draw(win); // restored world-space player draw
     for (auto &p : worldProjectiles) p->draw(win);
     if (moistureOverlay) map.drawMoistureOverlay(win);
     if (fertilityOverlay) map.drawFertilityOverlay(win);
-
     // cart route editing overlay
     if (cartRouteMode && activeCart) {
         const auto &wps = activeCart->getWaypoints();
@@ -759,15 +758,84 @@ void PlayState::draw() {
         drawMarker(unloaderTile, sf::Color(255,120,120,200), "U");
     }
 
-    // switch to UI/default view
+    // switch to default view for HUD/static overlays
     win.setView(win.getDefaultView());
+    // --- Minimap (now screen-space) --------------------------------
+    if (showMinimap) {
+        float tilePix = minimapTilePixel; if (tilePix < 1.f) tilePix = 1.f; if (tilePix>8.f) tilePix = 8.f;
+        unsigned mw = map.width(); unsigned mh = map.height();
+        float mmW = mw * tilePix; float mmH = mh * tilePix;
+        // position top-right with padding
+        float pad = 8.f;
+        sf::Vector2f origin(win.getSize().x - mmW - pad, pad);
+        // background panel
+        sf::RectangleShape bg({mmW+4.f, mmH+4.f}); bg.setPosition(origin - sf::Vector2f{2.f,2.f}); bg.setFillColor(sf::Color(20,20,28,180)); bg.setOutlineColor(sf::Color(60,60,80)); bg.setOutlineThickness(1.f); win.draw(bg);
+        // tiles
+        sf::RectangleShape cell({tilePix, tilePix});
+        for (unsigned ty=0; ty<mh; ++ty) {
+            for (unsigned tx=0; tx<mw; ++tx) {
+                if (!map.isExplored(tx,ty)) continue; // fog hidden
+                auto t = map.getTile(tx,ty);
+                sf::Color c;
+                switch(t) {
+                    case TileMap::Empty: c = sf::Color(70,110,80); break;
+                    case TileMap::Solid: c = sf::Color(50,50,55); break;
+                    case TileMap::Plantable: c = sf::Color(110,85,40); break;
+                    case TileMap::Rail: c = sf::Color(160,140,80); break;
+                }
+                cell.setFillColor(c);
+                cell.setPosition(origin + sf::Vector2f(tx*tilePix, ty*tilePix));
+                win.draw(cell);
+            }
+        }
+        // entities (optional)
+        if (showMinimapEntities) {
+            sf::RectangleShape dot({tilePix, tilePix});
+            dot.setFillColor(sf::Color::Red);
+            if (player) {
+                sf::Vector2f p = player->position();
+                unsigned ts = map.tileSize();
+                unsigned px = (unsigned)std::floor(p.x / ts);
+                unsigned py = (unsigned)std::floor(p.y / ts);
+                if (px < mw && py < mh) { dot.setPosition(origin + sf::Vector2f(px*tilePix, py*tilePix)); win.draw(dot); }
+            }
+            dot.setFillColor(sf::Color(220,180,60));
+            for (auto &e : entities) {
+                if (dynamic_cast<HostileNPC*>(e.get())) {
+                    sf::FloatRect b = e->getBounds(); unsigned ts = map.tileSize();
+                    unsigned ex = (unsigned)std::floor((b.position.x + b.size.x*0.5f)/ts);
+                    unsigned ey = (unsigned)std::floor((b.position.y + b.size.y*0.5f)/ts);
+                    if (ex < mw && ey < mh && map.isExplored(ex,ey)) { dot.setPosition(origin + sf::Vector2f(ex*tilePix, ey*tilePix)); win.draw(dot); }
+                }
+            }
+            dot.setFillColor(sf::Color(0,160,255));
+            for (auto &c : carts) {
+                sf::Vector2f cp = c->worldPosition(); unsigned ts = map.tileSize();
+                unsigned cx = (unsigned)std::floor(cp.x / ts); unsigned cy = (unsigned)std::floor(cp.y / ts);
+                if (cx < mw && cy < mh && map.isExplored(cx,cy)) { dot.setPosition(origin + sf::Vector2f(cx*tilePix, cy*tilePix)); win.draw(dot); }
+            }
+        }
+        // view rectangle
+        if (showMinimapViewRect) {
+            sf::Vector2f vc = view.getCenter(); sf::Vector2f vs = view.getSize();
+            unsigned ts = map.tileSize();
+            float left = (vc.x - vs.x*0.5f) / ts; float top = (vc.y - vs.y*0.5f) / ts;
+            float right = (vc.x + vs.x*0.5f) / ts; float bottom = (vc.y + vs.y*0.5f) / ts;
+            if (right < 0 || bottom < 0 || left > mw || top > mh) { /* ignore */ }
+            else {
+                if (left < 0) left = 0; if (top < 0) top = 0; if (right > mw) right = (float)mw; if (bottom > mh) bottom = (float)mh;
+                sf::RectangleShape vr({(right-left)*tilePix, (bottom-top)*tilePix});
+                vr.setPosition(origin + sf::Vector2f(left*tilePix, top*tilePix));
+                vr.setFillColor(sf::Color(0,0,0,0)); vr.setOutlineColor(sf::Color(255,255,255,100)); vr.setOutlineThickness(1.f);
+                win.draw(vr);
+            }
+        }
+    }
+    // ----------------------------------------------------------------
 
     if (inventoryUI) inventoryUI->draw(win);
     dialog.draw(win);
-
-    // HUD font
     auto &f = game.resources().font("assets/fonts/arial.ttf");
-
     // Player health bar (simple)
     if (player) {
         float hp = player->getHealth(); float maxhp = std::max(1.f, player->getMaxHealth());

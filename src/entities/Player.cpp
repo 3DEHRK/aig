@@ -75,6 +75,12 @@ void Player::applyMove(const sf::Vector2f& delta) { shape.move(delta); sprite.mo
 void Player::setPosition(const sf::Vector2f& pos) { shape.setPosition(pos); sprite.setPosition(pos); }
 sf::Vector2f Player::size() const { return shape.getSize(); }
 void Player::draw(sf::RenderWindow& window) { window.draw(sprite); }
+void Player::drawHUD(sf::RenderWindow& window, const sf::Vector2f& screenPos) {
+    // draw a copy of the sprite at fixed screen position (no world -> view transform assumed)
+    sf::Sprite copy = sprite;
+    copy.setPosition(screenPos);
+    window.draw(copy);
+}
 sf::FloatRect Player::getBounds() const { return shape.getGlobalBounds(); }
 void Player::interact(Entity* other) { if (!other) return; if (auto itemEnt = dynamic_cast<ItemEntity*>(other)) itemEnt->interact(this); }
 bool Player::wantsToInteract() const { return interactPressed; }
