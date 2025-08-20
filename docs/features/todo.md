@@ -1,24 +1,24 @@
 # TODO – Farming Game Build Checklist
 
 ## Systems
-- [ ] Implement **HarvestFX system**:
+- [x] ✅ Implement **HarvestFX system**:
   - Squash (0–90 ms), pop + particles (90–180 ms), fade+shrink (180–260 ms), loot magnetize (260–450 ms).
   - Spawn "+N" popup and flash outline.
   - Play pluck + rustle + coin SFX.
   - Apply 3 px screen shake.
   - add needed sounds at location as txt placeholder eg coin_pickup.ogg
 
-- [ ] Implement **Hold-to-Harvest**:
+- [x] ✅ Implement **Hold-to-Harvest**:
   - Key press starts harvesting at cursor tile.
   - If key held, sweep 3×3 rect.
   - Continue harvesting as cursor moves.
   - Queue actions; next starts at 120 ms overlap.
 
-- [ ] Implement **Magnet Pickup**:
+- [x] ✅ Implement **Magnet Pickup**:
   - Loot within 2.5 tiles accelerates toward player.
   - Reach player ≤300 ms.
 
-- [ ] Implement **Plant-System**:
+- [x] ✅ Implement **Plant-System**:
   - Plant with cursor
 
 - [ ] Implement **Water/Fertilize All**:

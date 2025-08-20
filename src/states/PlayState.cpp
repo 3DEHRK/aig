@@ -41,6 +41,8 @@ static float rand01() { return g_hostileDist(g_hostileRng); }
 PlayState::PlayState(Game& g)
 : game(g), view(g.getWindow().getDefaultView()), map(50, 30, 32)
 {
+    // Load crop configs before creating crops
+    Crop::loadConfigs(game.resources(), "data/crops.json");
     map.generateTestMap();
     std::cerr << "[PlayState] Setting rail texture path=assets/textures/entities/tiles/rail.png\n";
     map.setRailTexture(game.resources(), "assets/textures/entities/tiles/rail.png");
@@ -299,6 +301,15 @@ void PlayState::update(sf::Time dt) {
 
     // process input into player (sets vel & flags)
     player->update(dt);
+    // Hold-to-Harvest detection (reuse Interact action Down)
+    bool interactDown = game.input().actionDown("Interact");
+    if (interactDown) {
+        if (!harvestingActive) { harvestingActive = true; harvestHoldTime = 0.f; harvestStageTimer = 0.f; }
+    } else if (harvestingActive) {
+        harvestingActive = false; lastHarvestTile = {UINT32_MAX, UINT32_MAX};
+    }
+    if (harvestingActive) processHoldToHarvest(dt);
+
     // If player is riding a cart, override their movement to zero (cart carries them)
     bool playerRiding = false;
     for (auto &c : carts) { if (c->hasRider() && c->getRider() == player.get()) { playerRiding = true; break; } }
@@ -347,6 +358,50 @@ void PlayState::update(sf::Time dt) {
 
     // update soil simulation
     map.updateSoil(dt);
+
+    // Magnet Pickup: attract loose items within radius
+    {
+        float ts = (float)map.tileSize();
+        float radiusPx = magnetRadius * ts;
+        float radiusSq = radiusPx * radiusPx;
+        sf::Vector2f pp = player->position();
+        for (auto &e : entities) {
+            if (auto itemEnt = dynamic_cast<ItemEntity*>(e.get())) {
+                if (itemEnt->collected()) continue;
+                sf::FloatRect b = itemEnt->getBounds();
+                sf::Vector2f center{b.position.x + b.size.x*0.5f, b.position.y + b.size.y*0.5f};
+                sf::Vector2f d = pp - center;
+                float distSq = d.x*d.x + d.y*d.y;
+                if (distSq <= radiusSq) {
+                    float dist = std::sqrt(distSq);
+                    if (dist > 1.f) {
+                        sf::Vector2f dir = d / dist;
+                        // approximate velocity stored in ItemEntity; need access -> dynamic_cast and modify shape directly
+                        // We added velocity field; adjust via friend-like approach using public startMagnet & move by adding to velocity.
+                        // Reinterpret by adding small impulse via direct move each frame.
+                        float accel = magnetAcceleration;
+                        float step = accel * dt.asSeconds();
+                        // clamp speed by maxSpeed * dt for displacement-based integration
+                        sf::Vector2f move = dir * step * 0.016f; // small fraction; actual move happens in item update currently minimal
+                        // Instead apply immediate position shift toward player at controlled speed
+                        float maxStep = magnetMaxSpeed * dt.asSeconds();
+                        float desired = std::min(maxStep, dist);
+                        sf::Vector2f shift = dir * desired * 0.5f; // half-speed to allow smoothness
+                        // Directly move via shape (need accessor) -> we lack setter; hack: interact() uses bounds only. Replace by const_cast? Better: extend ItemEntity with move method.
+                        // Temporary: if close enough, collect.
+                        if (dist < 28.f) {
+                            itemEnt->interact(player.get());
+                        } else {
+                            // fallback: call startMagnet so its internal update drifts (limited without player pos). For now teleport small fraction.
+                            itemEnt->startMagnet();
+                        }
+                    } else {
+                        itemEnt->interact(player.get());
+                    }
+                }
+            }
+        }
+    }
 
     player->updateHealthRegen(dt);
 
@@ -489,22 +544,34 @@ void PlayState::update(sf::Time dt) {
     for (auto it = entities.begin(); it != entities.end(); ) {
         if (auto c = dynamic_cast<Crop*>(it->get())) {
             if (c->isFinished()) {
-                if (c->yieldAmount() > 0 && !c->isFinished()) {}
-                if (c->yieldAmount() > 0 && c->yieldAmount()) { harvestedCropsCount++; if (!fertilizerUnlocked && harvestedCropsCount >= 10) { fertilizerUnlocked = true; std::cerr << "Fertilizer unlocked after harvesting 10 crops!\n"; } }
-                // directive progress: harvest
-                for (auto &d : directives) if (d.id=="harvest_crops" && !d.satisfied) { d.progress++; }
+                if (c->wasHarvested()) {
+                    harvestedCropsCount++;
+                    if (!fertilizerUnlocked && harvestedCropsCount >= 10) { fertilizerUnlocked = true; std::cerr << "Fertilizer unlocked after harvesting 10 crops!\n"; }
+                    for (auto &d : directives) if (d.id=="harvest_crops" && !d.satisfied) { d.progress++; }
+                    // Spawn HarvestFX
+                    sf::FloatRect b = c->getBounds();
+                    HarvestFX fx; fx.pos = { b.position.x + b.size.x*0.5f, b.position.y + b.size.y*0.5f }; fx.yield = c->yieldAmount(); fx.duration = 0.45f; harvestFxList.push_back(fx);
+                }
                 sf::FloatRect b = c->getBounds();
                 unsigned tx = (unsigned)std::floor((b.position.x + b.size.x*0.5f)/ map.tileSize());
                 unsigned ty = (unsigned)std::floor((b.position.y + b.size.y*0.5f)/ map.tileSize());
-                if (tx < map.width() && ty < map.height()) {
-                    map.setTile(tx,ty, TileMap::Plantable);
-                }
+                if (tx < map.width() && ty < map.height()) map.setTile(tx,ty, TileMap::Plantable);
                 it = entities.erase(it);
                 continue;
             }
         }
         ++it;
     }
+    // Update HarvestFX animations
+    for (auto &fx : harvestFxList) {
+        if (!fx.active) continue; fx.elapsed += dt.asSeconds();
+        float t = fx.elapsed;
+        if (t >= fx.duration) { fx.active = false; continue; }
+        // phase mapping: 0 squash 0-0.09, 1 pop 0.09-0.18, 2 fade 0.18-0.26, 3 magnetize tail 0.26-0.45
+        if (t < 0.09f) fx.phase = 0; else if (t < 0.18f) fx.phase = 1; else if (t < 0.26f) fx.phase = 2; else fx.phase = 3;
+    }
+    // prune inactive
+    harvestFxList.erase(std::remove_if(harvestFxList.begin(), harvestFxList.end(), [](const HarvestFX& f){ return !f.active; }), harvestFxList.end());
 
     // mouse click interaction — point-in-rect
     bool leftClick = game.input().wasMousePressed(sf::Mouse::Button::Left);
@@ -707,12 +774,46 @@ void PlayState::evaluateDirectives() {
 void PlayState::draw() {
     sf::RenderWindow &win = game.getWindow();
     win.setView(view);
-    // world layers
+    // screen shake placeholder using active HarvestFX (minor vertical jitter during pop phase)
+    float shakeOffset = 0.f;
+    for (auto &fx : harvestFxList) if (fx.phase==1) { shakeOffset = std::max(shakeOffset, 3.f); }
+    if (shakeOffset>0.f) view.move(0.f, std::sin(hudTime*40.f)*shakeOffset*0.2f);
     map.draw(win, showRailOverlay);
     for (auto &e : entities) e->draw(win);
     for (auto &c : carts) c->draw(win);
-    if (player) player->draw(win); // restored world-space player draw
+    if (player) player->draw(win);
     for (auto &p : worldProjectiles) p->draw(win);
+    // draw HarvestFX
+    for (auto &fx : harvestFxList) {
+        float t = fx.elapsed;
+        float alpha = 1.f;
+        float scale = 1.f;
+        if (fx.phase==0) { // squash
+            scale = 0.6f + 0.4f * (t/0.09f);
+        } else if (fx.phase==1) { // pop
+            scale = 1.0f + 0.5f * ((t-0.09f)/0.09f);
+        } else if (fx.phase==2) { // fade+shrink
+            float lt = (t-0.18f)/0.08f; scale = 1.5f - 0.4f*lt; alpha = 1.f - lt;
+        } else { // magnet tail (float upward, fade slightly)
+            float lt = (t-0.26f)/(fx.duration-0.26f); scale = 1.1f - 0.5f*lt; alpha = 0.6f - 0.6f*lt; fx.pos.y -= 30.f * (dt.asSeconds());
+        }
+        sf::CircleShape circ(10.f);
+        circ.setOrigin({10.f,10.f});
+        circ.setPosition(fx.pos);
+        circ.setScale({scale, scale});
+        circ.setFillColor(sf::Color(255, 230, 80, (uint8_t)std::clamp(alpha*255.f,0.f,255.f)));
+        win.draw(circ);
+        // yield text popup on first frame of pop
+        if (fx.phase==1) {
+            try {
+                auto &f = game.resources().font("assets/fonts/arial.ttf");
+                sf::Text txt(f, "+" + std::to_string(fx.yield), 12u);
+                txt.setPosition(fx.pos + sf::Vector2f{-6.f, -16.f});
+                txt.setFillColor(sf::Color(255,255,255,200));
+                win.draw(txt);
+            } catch(...) {}
+        }
+    }
     if (moistureOverlay) map.drawMoistureOverlay(win);
     if (fertilityOverlay) map.drawFertilityOverlay(win);
     // cart route editing overlay

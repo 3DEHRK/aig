@@ -4,6 +4,8 @@
 #include <iostream>
 #include <cstdint>
 #include <algorithm>
+#include <fstream>
+#include <unordered_map>
 
 extern nlohmann::json* g_getTunablesJson();
 

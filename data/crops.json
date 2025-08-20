@@ -1,0 +1,28 @@
+{
+  "crops": [
+    {
+      "id": "wheat",
+      "stage_durations": [2.0, 2.0, 2.0],
+      "moisture_ideal_min": 0.35,
+      "moisture_ideal_max": 0.65,
+      "moisture_death_threshold": 0.15,
+      "moisture_wither_seconds": 25.0,
+      "fertility_yield_bonus_scale": 2.2,
+      "fertility_consumption": 0.02,
+      "base_yield": 1,
+      "max_quality": 3
+    },
+    {
+      "id": "herb",
+      "stage_durations": [3.5, 4.0, 5.0, 6.0],
+      "moisture_ideal_min": 0.30,
+      "moisture_ideal_max": 0.55,
+      "moisture_death_threshold": 0.12,
+      "moisture_wither_seconds": 30.0,
+      "fertility_yield_bonus_scale": 2.8,
+      "fertility_consumption": 0.03,
+      "base_yield": 1,
+      "max_quality": 4
+    }
+  ]
+}

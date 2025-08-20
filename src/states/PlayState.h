@@ -32,6 +32,7 @@ private:
     struct CombatText { sf::Text text; sf::Vector2f vel; float lifetime; };
     struct SpawnZone { sf::Vector2f center; float radius; float interval; float timer; int maxAlive; };
     struct Directive { std::string id; std::string text; bool satisfied=false; bool hidden=false; int progress=0; int target=0; float completedAt=-1.f; }; // added completedAt for HUD fade timing
+    struct HarvestFX { sf::Vector2f pos; float elapsed=0.f; float duration=0.45f; int phase=0; int yield=0; bool active=true; };
 
     Game& game;
     std::unique_ptr<Player> player;
@@ -134,6 +135,19 @@ private:
     int questChainStage = 0; // Phase 4 quest chain progression (0=plant,1=harvest,2=rail,3=done)
     float hudTime = 0.f; // NEW: clock for directive fade timing
 
+    // Hold-to-Harvest state
+    bool harvestingActive = false; // player holding key
+    float harvestHoldTime = 0.f; // accumulated hold time
+    float harvestStageInterval = 0.12f; // 120ms between queued actions
+    float harvestStageTimer = 0.f; // timer until next harvest action
+    sf::Vector2u lastHarvestTile{UINT32_MAX, UINT32_MAX};
+    int harvestRadius = 1; // 3x3 (radius 1) sweep
+
+    // Magnet pickup settings
+    float magnetRadius = 2.5f; // tiles
+    float magnetAcceleration = 900.f; // px/s^2 toward player
+    float magnetMaxSpeed = 600.f; // cap
+
     void updateQuests();
     void incrementQuestProgress(const std::string& objectiveId, int amount=1);
     void evaluateDirectives(); // Phase 4
@@ -142,4 +156,7 @@ private:
 
     void attemptPlanting(const sf::Vector2f& worldPos); // RESTORED: planting logic
     void clampViewCenter(); // ensure camera stays in map bounds
+    void processHoldToHarvest(sf::Time dt);
+
+    std::vector<HarvestFX> harvestFxList; // active harvest effects
 };

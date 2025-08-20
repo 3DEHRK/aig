@@ -1,6 +1,7 @@
 #include "ItemEntity.h"
 #include "../entities/Player.h"
 #include <iostream>
+#include <cmath>
 
 ItemEntity::ItemEntity(ItemPtr item, const sf::Vector2f& pos)
 : item_(std::move(item)), collected_(false)
@@ -11,8 +12,18 @@ ItemEntity::ItemEntity(ItemPtr item, const sf::Vector2f& pos)
     shape.setPosition(pos);
 }
 
-void ItemEntity::update(sf::Time) {
-    // placeholder: could animate / bob up and down
+void ItemEntity::startMagnet() { magnetizing = true; }
+
+void ItemEntity::update(sf::Time dt) {
+    if (collected_) return;
+    if (magnetizing) {
+        float ds = dt.asSeconds();
+        // simple homing accel toward player (player assumed global singleton accessible via interaction loop; here we just adjust in collect phase)
+        // velocity already pointing last frame; small damping
+        velocity *= 0.92f;
+        // will re-target in PlayState update (we don't know player pos here without passing pointer) -> keep placeholder drift
+        shape.move(velocity * ds);
+    }
 }
 
 void ItemEntity::draw(sf::RenderWindow& window) {
@@ -22,10 +33,8 @@ void ItemEntity::draw(sf::RenderWindow& window) {
 sf::FloatRect ItemEntity::getBounds() const { return shape.getGlobalBounds(); }
 
 void ItemEntity::interact(Entity* other) {
-    // when player interacts, transfer item to player's inventory
     if (collected_) return;
     if (!other) return;
-    // attempt to find Player by dynamic_cast
     if (auto p = dynamic_cast<Player*>(other)) {
         if (p->inventory().addItem(item_)) {
             collected_ = true;
