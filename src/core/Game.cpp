@@ -47,6 +47,7 @@ static void applyDefaultBindings(InputManager& input) {
         input.bindAction("ToggleFertility", sf::Keyboard::Key::N);
         input.bindAction("ToggleRespawnUnits", sf::Keyboard::Key::T);
         input.bindAction("ToggleMinimap", sf::Keyboard::Key::U);
+    input.bindAction("ToggleTileIndicators", sf::Keyboard::Key::O);
         input.bindAction("CycleMinimapScale", sf::Keyboard::Key::J);
         input.bindAction("ToggleMinimapViewRect", sf::Keyboard::Key::V);
         input.bindAction("ToggleMinimapEntities", sf::Keyboard::Key::G);

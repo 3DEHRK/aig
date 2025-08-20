@@ -95,3 +95,19 @@ Living checklist for verifying core systems after changes. Convert into automate
 6. Continue moving during ambient playback; footsteps still audible and not suppressed.
 7. Toggle day/night progression (fast-forward timeOfDay if needed) – ambient triggers irrespective of time (future: vary by time, acceptable now).
 8. Ensure no crash if placeholder .ogg files missing (SoundManager silently ignores failures).
+
+🍌 Diegetic Tile Indicators Test Protocol
+1. Ensure indicators visible by default (around player up to ~6 tiles radius) showing small vertical moisture bars and a fertility square.
+2. Press O to toggle indicators off/on; verify they hide and reappear.
+3. Water a dry tile (right-click) and observe its moisture bar grow (height & color shift toward cyan) within a second.
+4. Apply fertilize (F) and see fertility pip brighten toward vivid green.
+5. Move quickly; indicators update for newly entered tiles while off-screen tiles are not rendered (performance sanity).
+6. Place a rail or non-plantable tile; indicator for that position should disappear (only plantable soil shows stakes).
+
+🍌 World Decals Test Protocol
+1. Observe oil stain near altar location (approx 900,600 world coords) — dark patch with subtle rotation.
+2. Travel to rail sample (x≈200–264,y≈200) — parallel wheel rut dashes appear flanking the rail line.
+3. Check upper-left forest region (approx 160–420 x, 120–300 y) for scattered leaf rectangles with varied colors and rotation.
+4. Confirm decals render beneath entities and crops (player passes over them without occlusion issues).
+5. Performance sanity: no measurable frame drop (decals count < 100).
+6. Save/load currently does not persist decals (acceptable placeholder; future persistence optional).

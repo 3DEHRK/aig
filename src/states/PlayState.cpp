@@ -28,6 +28,7 @@
 #include "../entities/Cart.h" // cart integration
 #include "../systems/Quest.h"
 #include <cctype>
+#include "../systems/SoundManager.h" // ensure complete type for game.sound() usage
 
 // NOTE: Several member function definitions went missing after earlier patching, causing
 // undefined symbol linker errors. We restore lightweight implementations here matching
@@ -194,6 +195,8 @@ PlayState::PlayState(Game& g)
 
     lampPositions.push_back({player->position().x + 120.f, player->position().y});
     lampPositions.push_back({player->position().x - 180.f, player->position().y - 50.f});
+
+    initDecals();
 }
 
 PlayState::~PlayState() = default;
@@ -484,6 +487,7 @@ void PlayState::update(sf::Time dt) {
     // distance unit toggle (tiles/pixels)
     if (game.input().actionPressed("ToggleRespawnUnits")) { respawnDistanceInTiles = !respawnDistanceInTiles; }
     if (game.input().actionPressed("ToggleMinimap")) { showMinimap = !showMinimap; }
+    if (game.input().actionPressed("ToggleTileIndicators")) { showTileIndicators = !showTileIndicators; }
     // add minimap scale cycle (J)
     if (game.input().actionPressed("CycleMinimapScale")) {
         // cycle through 2,3,4 then back
@@ -999,9 +1003,11 @@ void PlayState::draw() {
     if (shakeOffset>0.f) worldView.move({0.f, std::sin(hudTime*40.f)*shakeOffset*0.2f});
     win.setView(worldView);
     map.draw(win, showRailOverlay);
+    drawDecals(win); // draw ground decals beneath entities
     for (auto &e : entities) e->draw(win);
     for (auto &c : carts) c->draw(win);
     if (player) player->draw(win);
+    if (showTileIndicators) drawTileIndicators(win, worldView);
     for (auto &p : worldProjectiles) p->draw(win);
     // draw HarvestFX
     for (auto &fx : harvestFxList) {
@@ -1282,6 +1288,48 @@ void PlayState::drawLighting(sf::RenderWindow& win, const sf::View& worldView) {
     win.setView(prev);
 }
 
+// ---------------- Diegetic Tile Indicators ----------------
+void PlayState::drawTileIndicators(sf::RenderWindow& win, const sf::View& worldView) {
+    // Draw small stakes/pips for tiles near the player to convey soil moisture & fertility.
+    if (!player) return;
+    unsigned ts = map.tileSize();
+    sf::Vector2f p = player->position();
+    int px = (int)std::floor(p.x / ts); int py = (int)std::floor(p.y / ts);
+    int radius = 6; // only local area to reduce clutter
+    sf::View prev = win.getView();
+    win.setView(worldView);
+    for (int dy=-radius; dy<=radius; ++dy) {
+        for (int dx=-radius; dx<=radius; ++dx) {
+            int tx = px + dx; int ty = py + dy; if (tx<0||ty<0||tx>=(int)map.width()||ty>=(int)map.height()) continue;
+            // Only plantable or crop-occupied soil gets indicator
+            if (!map.isTilePlantable(tx,ty)) continue;
+            float moist = map.moistureAt(tx,ty);
+            float fert = map.fertilityAt(tx,ty);
+            // stake base position
+            sf::Vector2f base(tx*ts + ts*0.5f, ty*ts + ts*0.5f);
+            // moisture bar: vertical line
+            float mH = 10.f; float mW = 2.f;
+            sf::RectangleShape mBar({mW, mH}); mBar.setOrigin({mW*0.5f, mH}); mBar.setPosition(base + sf::Vector2f{-6.f, -8.f});
+            // color from dry (rust) to wet (cyan)
+            auto lerpC=[&](sf::Color a, sf::Color b, float t){ return sf::Color(
+                (uint8_t)(a.r + (b.r-a.r)*t),
+                (uint8_t)(a.g + (b.g-a.g)*t),
+                (uint8_t)(a.b + (b.b-a.b)*t),
+                (uint8_t)(a.a + (b.a-a.a)*t)); };
+            sf::Color dry(150,70,40,180), wet(40,200,220,200);
+            mBar.setFillColor(lerpC(dry, wet, std::clamp(moist,0.f,1.f)));
+            mBar.setScale({1.f, std::clamp(moist,0.f,1.f)});
+            win.draw(mBar);
+            // fertility pip: small square whose color shifts from dull to bright green
+            sf::RectangleShape fPip({4.f,4.f}); fPip.setOrigin({2.f,2.f}); fPip.setPosition(base + sf::Vector2f{0.f,-6.f});
+            sf::Color poor(70,90,50,200), rich(120,255,120,220);
+            fPip.setFillColor(lerpC(poor, rich, std::clamp(fert,0.f,1.f)));
+            win.draw(fPip);
+        }
+    }
+    win.setView(prev);
+}
+
 // ---------------- SFX / Ambience ----------------
 void PlayState::updateSFX(sf::Time dt) {
     // footstep logic: trigger when player is moving sufficiently and timer exceeds interval
@@ -1336,4 +1384,53 @@ void PlayState::playFootstep() {
 void PlayState::refreshAmbientSchedule() {
     // Randomize next interval within +-30%
     float base = 9.f; float jitter = 0.3f; ambientInterval = base * (1.f + ((rand01()*2.f)-1.f)*jitter);
+}
+
+// ---------------- World Decals ----------------
+void PlayState::initDecals() {
+    // Prototype: place oil stain near altar (generator placeholder) and scattered leaves.
+    // Oil stain
+    decals.push_back(Decal{sf::Vector2f(900.f, 600.f) + sf::Vector2f(-40.f,40.f), sf::Color(30,30,40,170), {46.f,32.f}, 15.f, 1.f, "oil"});
+    // Scatter leaves in a region (pseudo forest at upper-left)
+    for (int i=0;i<28;++i) {
+        float x = 160.f + rand01()*260.f;
+        float y = 120.f + rand01()*180.f;
+        sf::Color leaf(120 + (uint8_t)(rand01()*60), 150 + (uint8_t)(rand01()*70), 60 + (uint8_t)(rand01()*30), 160 + (uint8_t)(rand01()*60));
+        decals.push_back(Decal{{x,y}, leaf, {8.f + rand01()*6.f, 4.f + rand01()*4.f}, rand01()*180.f, 1.f, "leaf"});
+    }
+    // Initial wheel ruts along existing rail sample (x=200..264,y=200)
+    spawnWheelRut({200.f, 200.f}, {264.f, 200.f});
+}
+
+void PlayState::spawnWheelRut(const sf::Vector2f& a, const sf::Vector2f& b) {
+    // Create a series of short dark dashes representing compressed ground.
+    sf::Vector2f d = b - a; float len = std::sqrt(d.x*d.x + d.y*d.y); if (len < 1.f) return; sf::Vector2f dir = d / len;
+    sf::Vector2f n(-dir.y, dir.x); // perpendicular for dual tracks (cart wheels)
+    int segments = (int)(len / 20.f);
+    for (int i=0;i<=segments;++i) {
+        float t = (float)i / segments; sf::Vector2f mid = a + dir * (t*len);
+        for (int side=-1; side<=1; side+=2) {
+            sf::Vector2f pos = mid + n * (side * 6.f) + sf::Vector2f(rand01()*4.f-2.f, rand01()*2.f-1.f);
+            sf::Color c(60,50,40,140);
+            decals.push_back(Decal{pos, c, {12.f, 3.f}, std::atan2(dir.y, dir.x)*180.f/3.14159f + (rand01()*10.f-5.f), 1.f, "rut"});
+        }
+    }
+}
+
+void PlayState::drawDecals(sf::RenderWindow& win) {
+    // Simple shape rendering (rectangles / ellipses) as placeholders.
+    for (auto &d : decals) {
+        sf::RectangleShape r(d.size);
+        r.setOrigin(d.size * 0.5f);
+        r.setPosition(d.pos);
+        r.setRotation(sf::degrees(d.rotation));
+        sf::Color col = d.color; col.a = (uint8_t)std::clamp(d.alpha * 255.f, 0.f, 255.f); r.setFillColor(col);
+        if (d.type == "leaf") {
+            // leaves: slightly skew using scale variations
+            r.setScale({1.f, 0.6f});
+        } else if (d.type == "oil") {
+            r.setScale({1.4f, 0.8f});
+        }
+        win.draw(r);
+    }
 }

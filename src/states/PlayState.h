@@ -221,4 +221,15 @@ private:
     void updateSFX(sf::Time dt);
     void playFootstep();
     void refreshAmbientSchedule();
+
+    // Diegetic Tile Indicators
+    bool showTileIndicators = true; // toggle key binding later
+    void drawTileIndicators(sf::RenderWindow& win, const sf::View& worldView);
+
+    // World Decals
+    struct Decal { sf::Vector2f pos; sf::Color color; sf::Vector2f size; float rotation=0.f; float alpha=1.f; std::string type; };
+    std::vector<Decal> decals; // static + dynamic
+    void initDecals();
+    void spawnWheelRut(const sf::Vector2f& a, const sf::Vector2f& b);
+    void drawDecals(sf::RenderWindow& win);
 };

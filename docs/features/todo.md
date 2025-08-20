@@ -57,11 +57,11 @@
   - Random ambient one-shots (wind, bird, leaves) on jittered timer.
   - Placeholder sound asset filenames added under `assets/sfx/` (README lists required .ogg files).
 
-- [ ] Implement **Diegetic Tile Indicators**:
-  - Small soil stakes colored for moisture/light/nutrient.
-  - Tooltip on hold key.
+- [x] ✅ Implement **Diegetic Tile Indicators**:
+  - Local stake overlays show moisture bar & fertility pip (toggle with O).
+  - Color gradients dry→wet and poor→rich; limited radius to reduce clutter.
 
-- [ ] Implement **World Decals**:
-  - Wheel ruts by tracks.
-  - Oil stains near generator.
-  - Leaves in forest biome.
+- [x] ✅ Implement **World Decals**:
+  - Wheel ruts align with sample rail track.
+  - Oil stain near altar area.
+  - Scattered leaf debris in forest patch.
