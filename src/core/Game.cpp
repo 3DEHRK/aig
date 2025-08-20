@@ -48,20 +48,22 @@ static void applyDefaultBindings(InputManager& input) {
         input.bindAction("ToggleRespawnUnits", sf::Keyboard::Key::T);
         input.bindAction("ToggleMinimap", sf::Keyboard::Key::U);
     input.bindAction("ToggleTileIndicators", sf::Keyboard::Key::O);
-        input.bindAction("CycleMinimapScale", sf::Keyboard::Key::J);
+    input.bindAction("CycleMinimapScale", sf::Keyboard::Key::J);
         input.bindAction("ToggleMinimapViewRect", sf::Keyboard::Key::V);
         input.bindAction("ToggleMinimapEntities", sf::Keyboard::Key::G);
         input.bindAction("ToggleDeathPenalty", sf::Keyboard::Key::Y);
         input.bindAction("QuickSave", sf::Keyboard::Key::K);
         input.bindAction("QuickLoad", sf::Keyboard::Key::L);
         input.bindAction("Fertilize", sf::Keyboard::Key::F);
-        input.bindAction("ToggleCodex", sf::Keyboard::Key::C);
-        input.bindAction("CraftSalve", sf::Keyboard::Key::Q);
-        input.bindAction("UseSalve", sf::Keyboard::Key::R);
+    input.bindAction("ToggleCodex", sf::Keyboard::Key::C);
+    input.bindAction("CraftSalve", sf::Keyboard::Key::Q);
+    input.bindAction("UseSalve", sf::Keyboard::Key::R);
         input.bindAction("ToggleRailOverlay", sf::Keyboard::Key::X);
         input.bindAction("CartRouteMode", sf::Keyboard::Key::Z); // new action
         input.bindAction("AssignLoader", sf::Keyboard::Key::Num1);
         input.bindAction("AssignUnloader", sf::Keyboard::Key::Num2);
+    input.bindAction("Contracts", sf::Keyboard::Key::Num3);
+    input.bindAction("Trader", sf::Keyboard::Key::Num4);
         input.bindAction("Journal", sf::Keyboard::Key::J); // Phase 4 journal panel toggle (temporarily J; consider remap later)
     }
 }

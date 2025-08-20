@@ -442,482 +442,219 @@ bool PlayState::tryMovePlayer(const sf::Vector2f& desired) {
 }
 
 void PlayState::update(sf::Time dt) {
-    // Global quit shortcut
+    // Quit
     if (game.input().actionPressed("Quit")) { game.getWindow().close(); return; }
+    hudTime += dt.asSeconds();
 
-    hudTime += dt.asSeconds(); // accumulate for directive fade timing
-
-    // journal toggle (Phase 4)
-    if (game.input().actionPressed("Journal")) { showJournal = !showJournal; }
-    // contracts panel toggle (new)
-    if (game.input().actionPressed("Contracts")) { showContracts = !showContracts; }
-    // toggle cart route mode (Z) and set activeCart
-    if (game.input().actionPressed("CartRouteMode")) {
-        cartRouteMode = !cartRouteMode;
-        if (cartRouteMode) {
-            if (!carts.empty()) { activeCart = carts[0].get(); }
-        } else {
-            activeCart = nullptr;
-            loaderMode = false; unloaderMode = false;
-        }
-    }
-    if (game.input().actionPressed("AssignLoader")) { loaderMode = true; unloaderMode = false; }
-    if (game.input().actionPressed("AssignUnloader")) { unloaderMode = true; loaderMode = false; }
-
-    // if a dialog is active, update dialog and skip movement/interactions
+    // Dialog handling (pauses world unless hidden realm active)
     if (dialog.active()) {
         dialog.update(game.input(), dt);
-        // still allow dialog to be drawn; update early-return so game world pauses
-        // if this dialog is a hidden-realm confirmation, allow the state to continue
-        if (!hiddenRealmActive) {
-            // per-frame input housekeeping
-            game.input().clearFrame();
-            return;
-        }
+        if (!hiddenRealmActive) { game.input().clearFrame(); return; }
     }
 
-    // toggle inventory UI (use action mapping)
-    if (game.input().actionPressed("Inventory")) {
-        if (inventoryUI) inventoryUI->toggle();
+    // Core toggles & panels
+    auto toggleWithToast = [&](const char* action, bool &flag, const std::string& label){ if (game.input().actionPressed(action)) { flag = !flag; addToast(label + (flag?" ON":" OFF")); } };
+    if (game.input().actionPressed("Inventory") && inventoryUI) inventoryUI->toggle();
+    if (game.input().actionPressed("Journal")) { showJournal = !showJournal; addToast(std::string("Journal ") + (showJournal?"OPEN":"CLOSED")); }
+    if (game.input().actionPressed("Contracts")) { showContracts = !showContracts; addToast(std::string("Contracts ") + (showContracts?"OPEN":"CLOSED")); }
+    if (game.input().actionPressed("Trader")) { showTrader = !showTrader; addToast(std::string("Trader ") + (showTrader?"OPEN":"CLOSED")); }
+    if (game.input().actionPressed("ToggleCodex")) { showCodex = !showCodex; addToast(std::string("Codex ") + (showCodex?"OPEN":"CLOSED")); }
+    if (game.input().actionPressed("ToggleMoisture")) { moistureOverlay = !moistureOverlay; addToast(std::string("Moisture Overlay ") + (moistureOverlay?"ON":"OFF")); }
+    if (game.input().actionPressed("ToggleFertility")) { fertilityOverlay = !fertilityOverlay; addToast(std::string("Fertility Overlay ") + (fertilityOverlay?"ON":"OFF")); }
+    if (game.input().actionPressed("ToggleRespawnUnits")) { respawnDistanceInTiles = !respawnDistanceInTiles; addToast(std::string("Respawn Units: ") + (respawnDistanceInTiles?"Tiles":"Pixels")); }
+    if (game.input().actionPressed("ToggleMinimap")) { showMinimap = !showMinimap; addToast(std::string("Minimap ") + (showMinimap?"ON":"OFF")); }
+    if (game.input().actionPressed("ToggleTileIndicators")) { showTileIndicators = !showTileIndicators; addToast(std::string("Tile Indicators ") + (showTileIndicators?"ON":"OFF")); }
+    if (game.input().actionPressed("ToggleRailOverlay")) { showRailOverlay = !showRailOverlay; addToast(std::string("Rail Overlay ") + (showRailOverlay?"ON":"OFF")); }
+    if (game.input().actionPressed("CycleMinimapScale")) { if (minimapTilePixel < 4.f) minimapTilePixel += 1.f; else minimapTilePixel = 2.f; addToast("Minimap Scale: " + std::to_string((int)minimapTilePixel) + "px"); }
+    if (game.input().actionPressed("ToggleMinimapViewRect")) { showMinimapViewRect = !showMinimapViewRect; addToast(std::string("View Rect ") + (showMinimapViewRect?"ON":"OFF")); }
+    if (game.input().actionPressed("ToggleMinimapEntities")) { showMinimapEntities = !showMinimapEntities; addToast(std::string("Minimap Entities ") + (showMinimapEntities?"ON":"OFF")); }
+    if (game.input().actionPressed("Help")) { showHelpOverlay = !showHelpOverlay; addToast(std::string("Help ") + (showHelpOverlay?"OPEN":"CLOSED")); }
+    if (game.input().actionPressed("ToggleDeathPenalty")) { enableDeathPenalty = !enableDeathPenalty; addToast(std::string("Death Penalty ") + (enableDeathPenalty?"ON":"OFF"), sf::Color(255,180,140)); }
+    if (game.input().actionPressed("QuickSave")) { saveGame("SaveGame.json"); SaveCustomBindings(game.input(), "bindings.saved.json"); addToast("Game Saved", sf::Color(160,220,160)); }
+    if (game.input().actionPressed("QuickLoad")) { loadGame("SaveGame.json"); addToast("Game Loaded", sf::Color(160,200,255)); }
+
+    // Rail tool toggle
+    if (game.input().actionPressed("RailTool") && railTool) { railTool->toggle(); addToast(std::string("Rail Tool ") + (railTool->enabled?"ON":"OFF")); }
+
+    // Cart route mode & loader/unloader assignment
+    if (game.input().actionPressed("CartRouteMode")) {
+        cartRouteMode = !cartRouteMode; addToast(std::string("Cart Route Mode ") + (cartRouteMode?"ON":"OFF"));
+        if (cartRouteMode) { if (!carts.empty()) activeCart = carts[0].get(); }
+        else { activeCart = nullptr; loaderMode = unloaderMode = false; }
+    }
+    if (game.input().actionPressed("AssignLoader")) { loaderMode = true; unloaderMode = false; addToast("Click loader tile"); }
+    if (game.input().actionPressed("AssignUnloader")) { unloaderMode = true; loaderMode = false; addToast("Click unloader tile"); }
+
+    // Craft & Use (Q / R)
+    if (game.input().actionPressed("CraftSalve")) {
+        int fiber=0; for (auto &it : player->inventory().itemsMutable()) if (it && it->id=="fiber") fiber += it->stackSize;
+        if (fiber >= 2) {
+            int need=2; for (auto &it : player->inventory().itemsMutable()) if (it && it->id=="fiber" && need>0) { int take=std::min(need,it->stackSize); it->stackSize-=take; need-=take; }
+            player->inventory().addItemById("salve_small",1); addToast("Crafted Salve", sf::Color(180,255,180));
+        } else addToast("Need 2 Fiber", sf::Color(255,160,140));
+    }
+    if (game.input().actionPressed("UseSalve")) {
+        for (auto &it : player->inventory().itemsMutable()) if (it && it->id=="salve_small" && it->stackSize>0) { it->stackSize--; player->setHealth(std::min(player->getMaxHealth(), player->getHealth()+25.f)); addToast("Used Salve +25HP", sf::Color(180,255,200)); break; }
     }
 
-    // toggle moisture overlay
-    if (game.input().actionPressed("ToggleMoisture")) { moistureOverlay = !moistureOverlay; }
-    if (game.input().actionPressed("ToggleFertility")) { fertilityOverlay = !fertilityOverlay; }
-    // distance unit toggle (tiles/pixels)
-    if (game.input().actionPressed("ToggleRespawnUnits")) { respawnDistanceInTiles = !respawnDistanceInTiles; }
-    if (game.input().actionPressed("ToggleMinimap")) { showMinimap = !showMinimap; }
-    if (game.input().actionPressed("ToggleTileIndicators")) { showTileIndicators = !showTileIndicators; }
-    // add minimap scale cycle (J)
-    if (game.input().actionPressed("CycleMinimapScale")) {
-        // cycle through 2,3,4 then back
-        if (minimapTilePixel < 4.f) minimapTilePixel += 1.f; else minimapTilePixel = 2.f;
-    }
-    // toggle minimap view rectangle
-    if (game.input().actionPressed("ToggleMinimapViewRect")) { showMinimapViewRect = !showMinimapViewRect; }
-    // toggle entity icons on minimap
-    if (game.input().actionPressed("ToggleMinimapEntities")) { showMinimapEntities = !showMinimapEntities; }
-    if (game.input().actionPressed("Help")) { showHelpOverlay = !showHelpOverlay; }
-    // debug key: toggle death penalty mode?
-    if (game.input().actionPressed("ToggleDeathPenalty")) { enableDeathPenalty = !enableDeathPenalty; }
-    // quick save/load
-    if (game.input().actionPressed("QuickSave")) { saveGame("SaveGame.json"); SaveCustomBindings(game.input(), "bindings.saved.json"); }
-    if (game.input().actionPressed("QuickLoad")) { loadGame("SaveGame.json"); }
-
-    // ensure UI gets per-frame input handling
+    // UI update
     if (inventoryUI) inventoryUI->update(game.input(), game.getWindow(), dt);
 
-    // toggle rail build tool
-    if (game.input().actionPressed("RailTool")) {
-        if (railTool) {
-            railTool->toggle();
-            std::cerr << "Rail tool toggled. enabled=" << (railTool->enabled ? 1 : 0) << "\n";
-        }
-    }
-
-    // process input into player (sets vel & flags)
+    // Player update (sets desired movement vector etc.)
     player->update(dt);
-    // Hold-to-Harvest detection (reuse Interact action Down)
+
+    // Hold-to-harvest handling
     bool interactDown = game.input().actionDown("Interact");
-    if (interactDown) {
-        if (!harvestingActive) { harvestingActive = true; harvestHoldTime = 0.f; harvestStageTimer = 0.f; }
-    } else if (harvestingActive) {
-        harvestingActive = false; lastHarvestTile = {UINT32_MAX, UINT32_MAX};
-    }
+    if (interactDown) { if (!harvestingActive) { harvestingActive = true; harvestHoldTime = 0.f; harvestStageTimer = 0.f; } }
+    else if (harvestingActive) { harvestingActive = false; lastHarvestTile = {UINT32_MAX, UINT32_MAX}; }
     if (harvestingActive) processHoldToHarvest(dt);
 
-    // If player is riding a cart, override their movement to zero (cart carries them)
-    bool playerRiding = false;
-    for (auto &c : carts) { if (c->hasRider() && c->getRider() == player.get()) { playerRiding = true; break; } }
-    // Planting attempt on Interact if no entity targeted will be processed after click logic using attemptPlanting
+    // Projectile fire
     timeSinceLastProjectile += dt.asSeconds();
-    // fire projectile using action mapping (ensure block closed properly)
     if (game.input().actionPressed("Shoot") && timeSinceLastProjectile >= projectileCooldown) {
         sf::Vector2f dir = player->computeDesiredMove(sf::seconds(1.f));
-        if (dir.x == 0 && dir.y == 0) dir = {1.f,0.f};
-        float len = std::sqrt(dir.x*dir.x + dir.y*dir.y);
-        if (len > 0.f) dir /= len;
+        if (dir.x==0 && dir.y==0) dir = {1.f,0.f};
+        float len = std::hypot(dir.x, dir.y); if (len>0.f) dir /= len;
         float dmg = player->baseDamage();
-        float projSpeed = 300.f; float projKnock = 0.f; float projLife = 2.f;
-        if (auto *tj = g_getTunablesJson()) {
-            if ((*tj).contains("projectile")) {
-                auto &pj = (*tj)["projectile"];
-                if (pj.contains("speed")) projSpeed = pj["speed"].get<float>();
-                if (pj.contains("knockback")) projKnock = pj["knockback"].get<float>();
-                if (pj.contains("lifetime")) projLife = pj["lifetime"].get<float>();
-            }
-        }
+        float projSpeed = 300.f, projKnock = 0.f, projLife = 2.f;
+        if (auto *tj = g_getTunablesJson()) if ((*tj).contains("projectile")) { auto &pj = (*tj)["projectile"]; if (pj.contains("speed")) projSpeed = pj["speed"].get<float>(); if (pj.contains("knockback")) projKnock = pj["knockback"].get<float>(); if (pj.contains("lifetime")) projLife = pj["lifetime"].get<float>(); }
         spawnProjectile(std::make_unique<Projectile>(player->position(), dir * projSpeed, projSpeed, projLife, dmg, projKnock));
         timeSinceLastProjectile = 0.f;
     }
 
-    // death handling & penalty (moved below projectile fire)
+    // Death / respawn handling
     if (playerDead) {
         respawnTimer += dt.asSeconds();
         if (respawnTimer >= respawnDelay) {
             if (enableDeathPenalty && player) {
                 for (auto &it : player->inventory().items()) {
-                    if (!it) continue;
-                    if (it->id.rfind("seed_",0)==0) continue;
-                    if (it->stackSize <= 0) continue;
-                    int lose = std::max(1, it->stackSize / 10);
-                    it->stackSize = std::max(0, it->stackSize - lose);
+                    if (!it) continue; if (it->id.rfind("seed_",0)==0) continue; if (it->stackSize<=0) continue;
+                    int lose = std::max(1, it->stackSize/10); it->stackSize = std::max(0, it->stackSize-lose);
                 }
             }
-            playerDead = false;
-            player->healToFull();
-            player->setPosition(respawnPos);
-            player->triggerInvulnerability(2.0f);
-            player->resetLifeStats();
+            playerDead = false; player->healToFull(); player->setPosition(respawnPos); player->triggerInvulnerability(2.f); player->resetLifeStats();
         }
     }
 
-    // update soil simulation
+    // Soil simulation
     map.updateSoil(dt);
 
-    // Magnet Pickup: attract loose items within radius
+    // Magnet pickup
     {
-        float ts = (float)map.tileSize();
-        float radiusPx = magnetRadius * ts;
-        float radiusSq = radiusPx * radiusPx;
-        sf::Vector2f pp = player->position();
-        for (auto &e : entities) {
-            if (auto itemEnt = dynamic_cast<ItemEntity*>(e.get())) {
-                if (itemEnt->collected()) continue;
-                sf::FloatRect b = itemEnt->getBounds();
-                sf::Vector2f center{b.position.x + b.size.x*0.5f, b.position.y + b.size.y*0.5f};
-                sf::Vector2f d = pp - center;
-                float distSq = d.x*d.x + d.y*d.y;
-                if (distSq <= radiusSq) {
-                    float dist = std::sqrt(distSq);
-                    if (dist > 1.f) {
-                        sf::Vector2f dir = d / dist;
-                        // approximate velocity stored in ItemEntity; need access -> dynamic_cast and modify shape directly
-                        // We added velocity field; adjust via friend-like approach using public startMagnet & move by adding to velocity.
-                        // Reinterpret by adding small impulse via direct move each frame.
-                        float accel = magnetAcceleration;
-                        float step = accel * dt.asSeconds();
-                        // clamp speed by maxSpeed * dt for displacement-based integration
-                        sf::Vector2f move = dir * step * 0.016f; // small fraction; actual move happens in item update currently minimal
-                        // Instead apply immediate position shift toward player at controlled speed
-                        float maxStep = magnetMaxSpeed * dt.asSeconds();
-                        float desired = std::min(maxStep, dist);
-                        sf::Vector2f shift = dir * desired * 0.5f; // half-speed to allow smoothness
-                        // Directly move via shape (need accessor) -> we lack setter; hack: interact() uses bounds only. Replace by const_cast? Better: extend ItemEntity with move method.
-                        // Temporary: if close enough, collect.
-                        if (dist < 28.f) {
-                            itemEnt->interact(player.get());
-                        } else {
-                            // fallback: call startMagnet so its internal update drifts (limited without player pos). For now teleport small fraction.
-                            itemEnt->startMagnet();
-                        }
-                    } else {
-                        itemEnt->interact(player.get());
-                    }
-                }
+        float ts = (float)map.tileSize(); float radiusPx = magnetRadius * ts; float radiusSq = radiusPx*radiusPx; sf::Vector2f pp = player->position();
+        for (auto &e : entities) if (auto itemEnt = dynamic_cast<ItemEntity*>(e.get())) if (!itemEnt->collected()) {
+            sf::FloatRect b = itemEnt->getBounds(); sf::Vector2f center{b.position.x + b.size.x*0.5f, b.position.y + b.size.y*0.5f}; sf::Vector2f d = pp - center; float distSq = d.x*d.x + d.y*d.y; if (distSq <= radiusSq) {
+                float dist = std::sqrt(distSq); if (dist < 28.f) { itemEnt->interact(player.get()); } else itemEnt->startMagnet();
             }
         }
     }
 
     player->updateHealthRegen(dt);
 
-    // compute desired movement and attempt collision-aware moves
-    sf::Vector2f desired = player->computeDesiredMove(dt);
-    if (playerRiding) desired = {0.f,0.f}; // movement suppressed while riding
-    tryMovePlayer(desired);
-    // update camera center to follow player
-    view.setCenter(player->position());
-    clampViewCenter();
+    // Movement / camera
+    sf::Vector2f desiredMove = player->computeDesiredMove(dt); bool playerRiding = false; for (auto &c : carts) { if (c->hasRider() && c->getRider()==player.get()) { playerRiding = true; break; } }
+    if (playerRiding) desiredMove = {0.f,0.f};
+    tryMovePlayer(desiredMove); view.setCenter(player->position()); clampViewCenter();
 
-    // mark explored area around player
+    // Explore fog
     {
-        float ts = (float)map.tileSize();
-        sf::Vector2f p = player->position();
-        int px = (int)std::floor(p.x / ts);
-        int py = (int)std::floor(p.y / ts);
-        int radius = 6; // tiles radius to reveal
-        for (int dy=-radius; dy<=radius; ++dy){
-            for (int dx=-radius; dx<=radius; ++dx){
-                int tx = px + dx; int ty = py + dy;
-                if (dx*dx + dy*dy <= radius*radius) map.markExplored((unsigned)tx,(unsigned)ty);
-            }
-        }
+        float ts = (float)map.tileSize(); sf::Vector2f p = player->position(); int px=(int)std::floor(p.x/ts), py=(int)std::floor(p.y/ts); int radius=6; for(int dy=-radius;dy<=radius;++dy) for(int dx=-radius;dx<=radius;++dx){ if(dx*dx+dy*dy>radius*radius) continue; map.markExplored((unsigned)(px+dx),(unsigned)(py+dy)); }
     }
 
-    // THREAT & HOSTILE SPAWN SYSTEM ------------------------------------------------
-    if (hostileSpawningEnabled) { // gated by toggle (default off per debug request)
-        float ds = dt.asSeconds();
-        sf::Vector2f cur = player->position();
-        float moveDist = std::hypot(cur.x - lastPlayerPos.x, cur.y - lastPlayerPos.y);
-        lastPlayerPos = cur;
-        threatLevel += ds * 0.25f + moveDist * 0.002f; // tuned scaling
-        if (threatLevel > 50.f) threatLevel = 50.f;
-        hostileSpawnInterval = hostileSpawnIntervalBase * std::max(0.25f, 1.f - threatLevel * threatToIntervalFactor);
-        maxHostiles = 5 + (int)std::floor(threatLevel * threatToMaxHostilesFactor * 5.f);
-        if (maxHostiles > 14) maxHostiles = 14;
-        tankSpawnChance = std::min(0.5f, threatLevel * 0.01f);
-        hostileSpawnTimer += ds;
-        int active = 0; for (auto &e : entities) if (dynamic_cast<HostileNPC*>(e.get())) ++active;
-        if (hostileSpawnTimer >= hostileSpawnInterval && active < maxHostiles) {
-            hostileSpawnTimer = 0.f;
-            std::vector<sf::Vector2f> candidates;
-            for (auto &pt : hostileSpawnPoints) {
-                sf::Vector2f d = pt - cur;
-                if (d.x*d.x + d.y*d.y >= minSpawnDistance*minSpawnDistance) candidates.push_back(pt);
-            }
-            if (!candidates.empty()) {
-                float r = rand01();
-                sf::Vector2f sp = candidates[(size_t)(r * candidates.size()) % candidates.size()];
-                spawnHostile(sp);
-            }
-        }
+    // Threat / hostile spawning
+    if (hostileSpawningEnabled) {
+        float ds = dt.asSeconds(); sf::Vector2f cur = player->position(); float moveDist = std::hypot(cur.x-lastPlayerPos.x, cur.y-lastPlayerPos.y); lastPlayerPos = cur; threatLevel += ds*0.25f + moveDist*0.002f; if (threatLevel>50.f) threatLevel=50.f; hostileSpawnInterval = hostileSpawnIntervalBase * std::max(0.25f, 1.f - threatLevel * threatToIntervalFactor); maxHostiles = std::min(14, 5 + (int)std::floor(threatLevel * threatToMaxHostilesFactor * 5.f)); tankSpawnChance = std::min(0.5f, threatLevel*0.01f); hostileSpawnTimer += ds; int active=0; for(auto &e:entities) if (dynamic_cast<HostileNPC*>(e.get())) ++active; if (hostileSpawnTimer>=hostileSpawnInterval && active<maxHostiles){ hostileSpawnTimer=0.f; std::vector<sf::Vector2f> cand; for(auto &pt:hostileSpawnPoints){ sf::Vector2f d=pt-cur; if(d.x*d.x+d.y*d.y>=minSpawnDistance*minSpawnDistance) cand.push_back(pt);} if(!cand.empty()){ float r=rand01(); sf::Vector2f sp=cand[(size_t)(r*cand.size())%cand.size()]; spawnHostile(sp);} }
     }
 
-    for (auto& e : entities) e->update(dt);
-    // update carts
+    // Update entities / carts / projectiles & collisions
+    for (auto &e : entities) e->update(dt);
     for (auto &c : carts) c->update(dt);
-    // update projectiles
     for (auto &p : worldProjectiles) p->update(dt);
-    // projectile lifetime & collision vs hostile NPCs (fixed braces & logic)
-    for (auto it = worldProjectiles.begin(); it != worldProjectiles.end(); ) {
-        bool remove = false;
-        if (auto proj = dynamic_cast<Projectile*>(it->get())) {
-            if (proj->expired()) {
-                remove = true;
-            } else {
+    // Projectile collisions
+    for (auto it = worldProjectiles.begin(); it!=worldProjectiles.end();) {
+        bool remove=false; if (auto proj = dynamic_cast<Projectile*>(it->get())) {
+            if (proj->expired()) remove=true; else {
                 sf::FloatRect pb = proj->getBounds();
-                for (auto &e : entities) {
-                    if (auto hostile = dynamic_cast<HostileNPC*>(e.get())) {
-                        sf::FloatRect hb = hostile->getBounds();
-                        bool overlap = !(pb.position.x + pb.size.x < hb.position.x ||
-                                         hb.position.x + hb.size.x < pb.position.x ||
-                                         pb.position.y + pb.size.y < hb.position.y ||
-                                         hb.position.y + hb.size.y < pb.position.y);
-                        if (overlap) {
-                            // apply damage
-                            hostile->takeDamage(proj->damage);
-                            // combat text
-                            try {
-                                auto &f = game.resources().font("assets/fonts/arial.ttf");
-                                sf::Text dmgTxt(f, std::to_string((int)proj->damage), 14u);
-                                dmgTxt.setFillColor(sf::Color::White);
-                                dmgTxt.setPosition({hb.position.x + hb.size.x*0.5f, hb.position.y - 10.f});
-                                CombatText ct{dmgTxt, {0.f,-30.f}, 0.9f};
-                                combatTexts.push_back(ct);
-                            } catch(...) {}
-                            proj->kill();
-                            remove = true;
-                            break;
-                        }
-                    }
+                for (auto &e : entities) if (auto hostile = dynamic_cast<HostileNPC*>(e.get())) {
+                    sf::FloatRect hb = hostile->getBounds(); bool overlap = !(pb.position.x+pb.size.x < hb.position.x || hb.position.x+hb.size.x < pb.position.x || pb.position.y+pb.size.y < hb.position.y || hb.position.y+hb.size.y < pb.position.y);
+                    if (overlap) { hostile->takeDamage(proj->damage); try { auto &f = game.resources().font("assets/fonts/arial.ttf"); sf::Text dmgTxt(f,std::to_string((int)proj->damage),14u); dmgTxt.setFillColor(sf::Color::White); dmgTxt.setPosition({hb.position.x+hb.size.x*0.5f, hb.position.y-10.f}); combatTexts.push_back({dmgTxt,{0.f,-30.f},0.9f}); } catch(...) {} proj->kill(); remove=true; break; }
                 }
             }
         }
         if (remove) it = worldProjectiles.erase(it); else ++it;
     }
 
-    // cull dead hostile NPCs (and spawn drops)
-    for (auto it = entities.begin(); it != entities.end(); ) {
-        bool erase = false;
-        if (auto h = dynamic_cast<HostileNPC*>(it->get())) {
-            if (h->isDead()) {
-                // spawn drops
-                try {
-                    auto &f = game.resources().font("assets/fonts/arial.ttf"); (void)f; // ensure font loaded for potential text if needed
-                } catch(...) {}
-                // simple RNG
-                static std::mt19937 rng(1337u);
-                std::uniform_real_distribution<float> dist(0.f,1.f);
-                float r1 = dist(rng); float r2 = dist(rng);
-                auto hb = h->getBounds(); sf::Vector2f dropPos(hb.position.x + hb.size.x*0.5f, hb.position.y + hb.size.y*0.5f);
-                // fiber drop
-                if (r1 < 0.6f) {
-                    auto fiber = std::make_shared<Item>("fiber", "Plant Fiber", "Common crafting material.", 1);
-                    entities.push_back(std::make_unique<ItemEntity>(fiber, dropPos + sf::Vector2f{-4.f,-4.f}));
-                }
-                // crystal drop
-                if (r2 < 0.1f) {
-                    auto crystal = std::make_shared<Item>("crystal_raw", "Raw Crystal", "Faintly humming shard used in rituals.", 1);
-                    entities.push_back(std::make_unique<ItemEntity>(crystal, dropPos + sf::Vector2f{4.f,4.f}));
-                }
-                erase = true;
-            }
-        }
+    // Remove dead hostiles & drops
+    for (auto it=entities.begin(); it!=entities.end(); ) {
+        bool erase=false; if (auto h = dynamic_cast<HostileNPC*>(it->get())) if (h->isDead()) { static std::mt19937 rng(1337u); std::uniform_real_distribution<float> dist(0.f,1.f); float r1=dist(rng), r2=dist(rng); auto hb=h->getBounds(); sf::Vector2f dp(hb.position.x+hb.size.x*0.5f, hb.position.y+hb.size.y*0.5f); if (r1<0.6f) entities.push_back(std::make_unique<ItemEntity>(std::make_shared<Item>("fiber","Plant Fiber","Common crafting material.",1), dp+sf::Vector2f{-4.f,-4.f})); if (r2<0.1f) entities.push_back(std::make_unique<ItemEntity>(std::make_shared<Item>("crystal_raw","Raw Crystal","Faintly humming shard used in rituals.",1), dp+sf::Vector2f{4.f,4.f})); erase=true; }
         if (erase) it = entities.erase(it); else ++it;
     }
 
-    // update combat texts
-    for (auto &ct : combatTexts) {
-        float s = dt.asSeconds();
-        ct.text.move(ct.vel * s);
-        ct.lifetime -= s;
-        sf::Color c = ct.text.getFillColor();
-        if (ct.lifetime < 0.4f) { c.a = static_cast<uint8_t>(std::max(0.f, 255.f * (ct.lifetime/0.4f))); ct.text.setFillColor(c); }
-    }
-    combatTexts.erase(std::remove_if(combatTexts.begin(), combatTexts.end(), [](const CombatText& ct){ return ct.lifetime <= 0.f; }), combatTexts.end());
+    // Combat texts
+    for (auto &ct : combatTexts) { float s=dt.asSeconds(); ct.text.move(ct.vel*s); ct.lifetime -= s; auto c=ct.text.getFillColor(); if (ct.lifetime<0.4f) { c.a = (uint8_t)std::max(0.f,255.f*(ct.lifetime/0.4f)); ct.text.setFillColor(c);} }
+    combatTexts.erase(std::remove_if(combatTexts.begin(), combatTexts.end(), [](const CombatText& ct){ return ct.lifetime<=0.f; }), combatTexts.end());
 
-    // reclaim finished crops (harvested or withered) and restore soil tile to Plantable
-    for (auto it = entities.begin(); it != entities.end(); ) {
-        if (auto c = dynamic_cast<Crop*>(it->get())) {
-            if (c->isFinished()) {
-                if (c->wasHarvested()) {
-                    harvestedCropsCount++;
-                    onCropHarvested(c->cropId());
-                    if (!fertilizerUnlocked && harvestedCropsCount >= 10) { fertilizerUnlocked = true; std::cerr << "Fertilizer unlocked after harvesting 10 crops!\n"; }
-                    for (auto &d : directives) if (d.id=="harvest_crops" && !d.satisfied) { d.progress++; }
-                    // Spawn HarvestFX
-                    sf::FloatRect b = c->getBounds();
-                    HarvestFX fx; fx.pos = { b.position.x + b.size.x*0.5f, b.position.y + b.size.y*0.5f }; fx.yield = c->yieldAmount(); fx.duration = 0.45f; harvestFxList.push_back(fx);
-                }
-                sf::FloatRect b = c->getBounds();
-                unsigned tx = (unsigned)std::floor((b.position.x + b.size.x*0.5f)/ map.tileSize());
-                unsigned ty = (unsigned)std::floor((b.position.y + b.size.y*0.5f)/ map.tileSize());
-                if (tx < map.width() && ty < map.height()) map.setTile(tx,ty, TileMap::Plantable);
-                it = entities.erase(it);
-                continue;
-            }
-        }
-        ++it;
-    }
-    // Update HarvestFX animations
-    for (auto &fx : harvestFxList) {
-        if (!fx.active) continue; fx.elapsed += dt.asSeconds();
-        float t = fx.elapsed;
-        if (t >= fx.duration) { fx.active = false; continue; }
-        if (t < 0.09f) fx.phase = 0; else if (t < 0.18f) fx.phase = 1; else if (t < 0.26f) fx.phase = 2; else fx.phase = 3;
-        if (fx.phase == 3) { fx.pos.y -= 30.f * dt.asSeconds(); }
-    }
-    // prune inactive
+    // Crop reclamation & harvest FX
+    for (auto it=entities.begin(); it!=entities.end(); ) {
+        if (auto c = dynamic_cast<Crop*>(it->get())) if (c->isFinished()) { if (c->wasHarvested()) { harvestedCropsCount++; onCropHarvested(c->cropId()); if (!fertilizerUnlocked && harvestedCropsCount>=10) { fertilizerUnlocked=true; std::cerr << "Fertilizer unlocked after harvesting 10 crops!\n"; } for (auto &d : directives) if (d.id=="harvest_crops" && !d.satisfied) d.progress++; sf::FloatRect b=c->getBounds(); HarvestFX fx; fx.pos={b.position.x+b.size.x*0.5f,b.position.y+b.size.y*0.5f}; fx.yield=c->yieldAmount(); fx.duration=0.45f; harvestFxList.push_back(fx);} sf::FloatRect b=c->getBounds(); unsigned tx=(unsigned)std::floor((b.position.x+b.size.x*0.5f)/map.tileSize()); unsigned ty=(unsigned)std::floor((b.position.y+b.size.y*0.5f)/map.tileSize()); if (tx<map.width()&&ty<map.height()) map.setTile(tx,ty,TileMap::Plantable); it = entities.erase(it); continue; } ++it; }
+    for (auto &fx : harvestFxList) { if (!fx.active) continue; fx.elapsed += dt.asSeconds(); float t=fx.elapsed; if (t>=fx.duration) { fx.active=false; continue; } if (t<0.09f) fx.phase=0; else if (t<0.18f) fx.phase=1; else if (t<0.26f) fx.phase=2; else fx.phase=3; if (fx.phase==3) fx.pos.y -= 30.f * dt.asSeconds(); }
     harvestFxList.erase(std::remove_if(harvestFxList.begin(), harvestFxList.end(), [](const HarvestFX& f){ return !f.active; }), harvestFxList.end());
 
-    // mouse click interaction — point-in-rect
+    // Mouse & interaction
     bool leftClick = game.input().wasMousePressed(sf::Mouse::Button::Left);
     bool rightClick = game.input().wasMousePressed(sf::Mouse::Button::Right);
     sf::Vector2i pixelPos = sf::Mouse::getPosition(game.getWindow());
     sf::Vector2f worldPos = game.getWindow().mapPixelToCoords(pixelPos, view);
-    // NOTE: use player's cached interact flag (Player::update already consumed actionPressed)
     bool interactPressed = player->wantsToInteract();
-    bool plantedThisFrame = false;
 
-    // cart route editing interactions
     if (cartRouteMode && activeCart) {
-        unsigned ts = map.tileSize();
-        unsigned tx = (unsigned)std::floor(worldPos.x / ts);
-        unsigned ty = (unsigned)std::floor(worldPos.y / ts);
+        unsigned ts = map.tileSize(); unsigned tx=(unsigned)std::floor(worldPos.x/ts); unsigned ty=(unsigned)std::floor(worldPos.y/ts);
         if (leftClick) {
-            if (loaderMode) { loaderTile = {tx,ty}; loaderMode = false; }
-            else if (unloaderMode) { unloaderTile = {tx,ty}; unloaderMode = false; }
-            else if (tx < map.width() && ty < map.height() && map.isTileRail(tx,ty)) {
-                activeCart->addWaypoint({tx,ty});
-            }
+            if (loaderMode) { loaderTile={tx,ty}; loaderMode=false; }
+            else if (unloaderMode) { unloaderTile={tx,ty}; unloaderMode=false; }
+            else if (tx<map.width() && ty<map.height() && map.isTileRail(tx,ty)) activeCart->addWaypoint({tx,ty});
         }
-        if (rightClick) {
-            activeCart->clearWaypoints();
-        }
+        if (rightClick) activeCart->clearWaypoints();
     } else {
-        // existing watering / interaction path
-        // simple watering: right-click increases moisture on hovered tile
-        if (rightClick) {
-            unsigned ts = map.tileSize();
-            unsigned tx = (unsigned)std::floor(worldPos.x / ts);
-            unsigned ty = (unsigned)std::floor(worldPos.y / ts);
-            if (player->hasWateringTool()) {
-                // boosted watering if tool present
-                map.addWater(tx,ty,0.4f);
-                // minor splash to von neumann neighbors
-                if (tx>0) map.addWater(tx-1,ty,0.1f);
-                if (tx+1<map.width()) map.addWater(tx+1,ty,0.1f);
-                if (ty>0) map.addWater(tx,ty-1,0.1f);
-                if (ty+1<map.height()) map.addWater(tx,ty+1,0.1f);
-            } else if (map.isTilePlantable(tx,ty)) map.addWater(tx,ty,0.25f);
-        }
-        // planting / interaction: Interact key now prioritizes nearby cart/entity, not mouse hover
+        if (rightClick) { unsigned ts=map.tileSize(); unsigned tx=(unsigned)std::floor(worldPos.x/ts); unsigned ty=(unsigned)std::floor(worldPos.y/ts); if (player->hasWateringTool()) { map.addWater(tx,ty,0.4f); if (tx>0) map.addWater(tx-1,ty,0.1f); if (tx+1<map.width()) map.addWater(tx+1,ty,0.1f); if (ty>0) map.addWater(tx,ty-1,0.1f); if (ty+1<map.height()) map.addWater(tx,ty+1,0.1f); } else if (map.isTilePlantable(tx,ty)) map.addWater(tx,ty,0.25f); }
         if (interactPressed) {
-            // Determine if player is already riding
-            bool playerRidingNow = false; Cart* ridingCart = nullptr;
-            for (auto &c : carts) if (c->getRider() == player.get()) { playerRidingNow = true; ridingCart = c.get(); break; }
-            // Player bounds for proximity checks
-            sf::FloatRect pb = player->getBounds();
-            const float proxExpand = 12.f; // allow small tolerance
-            pb.position.x -= proxExpand; pb.position.y -= proxExpand; pb.size.x += proxExpand*2.f; pb.size.y += proxExpand*2.f;
-            auto overlaps = [](const sf::FloatRect& A, const sf::FloatRect& B){
-                return !(A.position.x + A.size.x < B.position.x ||
-                         B.position.x + B.size.x < A.position.x ||
-                         A.position.y + A.size.y < B.position.y ||
-                         B.position.y + B.size.y < A.position.y);
-            };
-            bool handled = false;
-            if (playerRidingNow && ridingCart) { ridingCart->dismount(); handled = true; }
+            bool playerRidingNow=false; Cart* riding=nullptr; for (auto &c : carts) if (c->getRider()==player.get()) { playerRidingNow=true; riding=c.get(); break; }
+            sf::FloatRect pb = player->getBounds(); float prox=12.f; pb.position.x -= prox; pb.position.y -= prox; pb.size.x += prox*2.f; pb.size.y += prox*2.f;
+            auto overlaps=[&](const sf::FloatRect&A,const sf::FloatRect&B){return !(A.position.x+A.size.x<B.position.x||B.position.x+B.size.x<A.position.x||A.position.y+A.size.y<B.position.y||B.position.y+B.size.y<A.position.y);};
+            bool handled=false; if (playerRidingNow && riding) { riding->dismount(); handled=true; }
             else {
-                for (auto &c : carts) { if (overlaps(pb, c->getBounds())) { c->interact(player.get()); handled = true; break; } }
-                if (!handled) {
-                    for (auto &e : entities) { if (overlaps(pb, e->getBounds())) { e->interact(player.get()); handled = true; break; } }
-                }
+                for (auto &c : carts) if (overlaps(pb,c->getBounds())) { c->interact(player.get()); handled=true; break; }
+                if (!handled) for (auto &e : entities) if (overlaps(pb,e->getBounds())) { e->interact(player.get()); handled=true; break; }
             }
-            if (!handled) { attemptPlanting(worldPos); }
-            // reset interact so we don't process again this frame
+            if (!handled) attemptPlanting(worldPos);
             player->resetInteract();
         }
-        // fertilize: press F to boost fertility on player tile (prototype)
         if (game.input().actionPressed("Fertilize")) {
-            if (!fertilizerUnlocked) {
-                if (harvestedCropsCount >= 10) fertilizerUnlocked = true; else {
-                    std::cerr << "Fertilizer locked: harvest " << (10 - harvestedCropsCount) << " more crops.\n";
-                }
-            }
-            if (fertilizerUnlocked) {
-                unsigned ts = map.tileSize();
-                sf::Vector2f ppos = player->position();
-                unsigned tx = (unsigned)std::floor(ppos.x / ts);
-                unsigned ty = (unsigned)std::floor(ppos.y / ts);
-                bool usedFert = false;
-                for (auto &it : player->inventory().items()) {
-                    if (it && it->id == "fert_basic" && it->stackSize > 0) { it->stackSize -= 1; usedFert = true; map.addFertility(tx,ty,0.15f); break; }
-                }
-                if (!usedFert) map.addFertility(tx,ty,0.05f);
-            }
+            if (!fertilizerUnlocked) { if (harvestedCropsCount >= 10) fertilizerUnlocked = true; else std::cerr << "Fertilizer locked: harvest " << (10 - harvestedCropsCount) << " more crops.\n"; }
+            if (fertilizerUnlocked) { unsigned ts=map.tileSize(); sf::Vector2f ppos=player->position(); unsigned tx=(unsigned)std::floor(ppos.x/ts); unsigned ty=(unsigned)std::floor(ppos.y/ts); bool used=false; for (auto &it : player->inventory().items()) if (it && it->id=="fert_basic" && it->stackSize>0) { it->stackSize--; used=true; map.addFertility(tx,ty,0.15f); break; } if (!used) map.addFertility(tx,ty,0.05f); addToast("Fertilized", sf::Color(200,255,180)); }
         }
     }
 
-    // update rail tool if enabled
     if (railTool && railTool->enabled) {
-        railTool->update(worldPos, leftClick);
-        if (leftClick) { syncRailsWithMap(); for (auto &d : directives) if (d.id=="build_rail" && !d.satisfied) { d.progress = 1; } 
-            // detect placed rail at mouse tile
-            unsigned ts = map.tileSize(); unsigned tx = (unsigned)std::floor(worldPos.x/ts); unsigned ty = (unsigned)std::floor(worldPos.y/ts);
-            if (tx < map.width() && ty < map.height() && map.isTileRail(tx,ty)) onRailPlaced(tx,ty);
-        }
-    } else {
-        if (leftClick) {
-            for (size_t i = 0; i < entities.size(); ++i) {
-                auto &e = entities[i];
-                if (e->getBounds().contains(worldPos)) {
-                    if (auto npc = dynamic_cast<NPC*>(e.get())) {
-                        dialog.start({ "Hello stranger.", "Nice weather today, isn't it?", "Press E or Space to continue." });
-                    } else {
-                        e->interact(player.get());
-                    }
-                }
-            }
-        }
+        railTool->update(worldPos, leftClick); if (leftClick) { syncRailsWithMap(); for (auto &d : directives) if (d.id=="build_rail" && !d.satisfied) d.progress=1; unsigned ts=map.tileSize(); unsigned tx=(unsigned)std::floor(worldPos.x/ts); unsigned ty=(unsigned)std::floor(worldPos.y/ts); if (tx<map.width() && ty<map.height() && map.isTileRail(tx,ty)) onRailPlaced(tx,ty); }
+    } else if (leftClick) {
+        for (auto &e : entities) if (e->getBounds().contains(worldPos)) { if (auto npc = dynamic_cast<NPC*>(e.get())) dialog.start({"Hello stranger.","Nice weather today, isn't it?","Press E or Space to continue."}); else e->interact(player.get()); }
     }
-    // planting directive increment (if planting occurred this frame, detect new crop near player by scanning last entity) - simplistic heuristic
-    // (Could be improved with explicit event in future.)
-    if (leftClick && !directives.empty()) {
-        if (auto it = std::find_if(directives.begin(), directives.end(), [](const Directive& d){return d.id=="plant_seed";}); it!=directives.end() && !it->satisfied) {
-            if (entities.size() > lastEntityCount) {
-                it->progress = it->target; // force complete
-                std::cerr << "Directive completed (plant seed): " << it->text << "\n";
-            }
-        }
-    }
+
+    // Planting directive heuristic
+    if (leftClick && !directives.empty()) if (auto it = std::find_if(directives.begin(), directives.end(), [](const Directive& d){return d.id=="plant_seed";}); it!=directives.end() && !it->satisfied) if (entities.size() > lastEntityCount) it->progress = it->target;
     lastEntityCount = entities.size();
 
     updateQuests();
     evaluateDirectives();
     updateQuestChain();
-    tryCompleteContracts(); // attempt auto-completion each frame (cheap)
+    tryCompleteContracts();
     updateSFX(dt);
+
+    // Toast lifetime update
+    for (auto &t : toasts) t.time += dt.asSeconds();
+    toasts.erase(std::remove_if(toasts.begin(), toasts.end(), [](const Toast& t){ return t.time >= t.ttl; }), toasts.end());
+
     game.input().clearFrame();
 }
 
@@ -1245,6 +982,53 @@ void PlayState::draw() {
             sf::Text t(fnt, ss.str(), 11u); t.setPosition({px+8.f, ly}); t.setFillColor(sf::Color(210,210,210)); win.draw(t); ly += 14.f; if (ly > py+panelH-18.f) break; ++idx;
         }
     }
+
+    if (showHelpOverlay) {
+        auto &fnt = game.resources().font("assets/fonts/arial.ttf");
+        sf::Vector2f sz((float)win.getSize().x * 0.5f, (float)win.getSize().y * 0.7f);
+        sf::RectangleShape bg(sz); bg.setOrigin(sz*0.5f); bg.setPosition({win.getSize().x*0.5f, win.getSize().y*0.5f});
+        bg.setFillColor(sf::Color(20,20,30,220)); bg.setOutlineThickness(1.f); bg.setOutlineColor(sf::Color(70,70,100));
+        win.draw(bg);
+        float x = bg.getPosition().x - sz.x*0.5f + 16.f;
+        float y0 = bg.getPosition().y - sz.y*0.5f + 16.f; float y = y0;
+        sf::Text title(fnt, "Help / Controls", 18u); title.setFillColor(sf::Color(255,220,120)); title.setPosition({x,y}); win.draw(title); y += 26.f;
+        auto add=[&](const std::string& line){ sf::Text t(fnt, line, 12u); t.setFillColor(sf::Color(200,200,210)); t.setPosition({x,y}); win.draw(t); y += 16.f; };
+        add("WASD: Move");
+        add("E: Interact / Hold to Harvest");
+        add("Space: Shoot");
+        add("I: Inventory");
+        add("B: Rail Tool (place rails with LMB)");
+        add("Z: Cart Route Mode (Num1 Loader / Num2 Unloader)");
+        add("M / N: Toggle Moisture / Fertility overlays");
+        add("U: Toggle Minimap (J scale, V view rect, G entities)");
+        add("O: Tile Indicators (stakes)");
+        add("F: Fertilize tile");
+        add("K / L: Quick Save / Load");
+        add("Y: Toggle Death Penalty");
+        add("H: Toggle this help panel");
+        add("ESC: Quit");
+        add("C: Codex  Q: Craft Salve  R: Use Salve");
+        // footer
+        sf::Text footer(fnt, "(Close with H)", 12u); footer.setFillColor(sf::Color(150,150,170)); footer.setPosition({x, bg.getPosition().y + sz.y*0.5f - 28.f}); win.draw(footer);
+    }
+
+    // Toasts (after overlays so they are on top except help)
+    if (!toasts.empty()) {
+        auto &fnt2 = game.resources().font("assets/fonts/arial.ttf");
+        float cx = win.getSize().x * 0.5f; float yTop = 8.f;
+        for (auto &t : toasts) {
+            float alpha = 1.f; if (t.time > t.ttl - 0.5f) alpha = std::max(0.f, (t.ttl - t.time)/0.5f);
+            sf::Text txt(fnt2, t.msg, 14u); txt.setFillColor(sf::Color(t.color.r,t.color.g,t.color.b,(uint8_t)(alpha*255)));
+            sf::FloatRect b = txt.getGlobalBounds(); txt.setPosition({cx - b.size.x*0.5f, yTop});
+            win.draw(txt); yTop += 18.f;
+        }
+    }
+}
+
+void PlayState::addToast(const std::string& m, const sf::Color& c, float ttl) {
+    if (!toasts.empty() && toasts.back().msg == m) { toasts.back().time = 0.f; toasts.back().ttl = ttl; toasts.back().color = c; return; }
+    toasts.push_back({m,0.f,ttl,c});
+    if (toasts.size() > 8) toasts.erase(toasts.begin());
 }
 
 void PlayState::updateDayNight(sf::Time dt) {

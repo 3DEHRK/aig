@@ -232,4 +232,9 @@ private:
     void initDecals();
     void spawnWheelRut(const sf::Vector2f& a, const sf::Vector2f& b);
     void drawDecals(sf::RenderWindow& win);
+
+    // Lightweight toast/status messages for key feedback
+    struct Toast { std::string msg; float time=0.f; float ttl=2.f; sf::Color color; };
+    std::vector<Toast> toasts;
+    void addToast(const std::string& m, const sf::Color& c=sf::Color(230,230,240), float ttl=2.f);
 };
