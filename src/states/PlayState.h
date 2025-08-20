@@ -148,10 +148,14 @@ private:
     float magnetAcceleration = 900.f; // px/s^2 toward player
     float magnetMaxSpeed = 600.f; // cap
 
-    // Water/Fertilize All settings
-    float areaActionCooldown = 2.f; // seconds between mass actions
-    float areaActionTimer = 0.f;
-    int areaRadius = 5; // starting radius
+    // Batch water/fertilize tool
+    bool batchModeWater = false; // toggle key for water-all
+    bool batchModeFertilize = false; // toggle key for fertilize-all
+    int batchRadius = 5; // start 5 (tiles)
+    float batchWaterAmount = 0.25f; // per tile water
+    float batchFertilityAmount = 0.02f; // per tile fertility addition
+    float batchCooldown = 2.f; // seconds between uses
+    float batchCooldownTimer = 0.f;
 
     void updateQuests();
     void incrementQuestProgress(const std::string& objectiveId, int amount=1);
@@ -162,6 +166,8 @@ private:
     void attemptPlanting(const sf::Vector2f& worldPos); // RESTORED: planting logic
     void clampViewCenter(); // ensure camera stays in map bounds
     void processHoldToHarvest(sf::Time dt);
+
+    void applyBatchAction(bool fertilize);
 
     std::vector<HarvestFX> harvestFxList; // active harvest effects
 };

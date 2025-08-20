@@ -33,3 +33,10 @@ Living checklist for verifying core systems after changes. Convert into automate
 3. Screen shake (vertical jitter) occurs only during pop phase; amplitude ≤3 px.
 4. Effect fully removed after ~0.45s.
 5. Multiple crops harvested rapidly spawn overlapping FX independently.
+
+🍌 Water/Fertilize All Test Protocol
+1. Position player near mixed plantable tiles (some empty, some with crops).
+2. Trigger batch water (Help key) -> console logs number of tiles affected; moisture overlay should brighten those tiles.
+3. Trigger batch fertilize (ToggleDeathPenalty key) -> fertility overlay increases intensity for affected tiles.
+4. Mature (finished) or currently growing crops are skipped (verify tile moisture changes only on empty soil for now due to heuristic).
+5. Cooldown prevents immediate re-use (<2s); attempt early use logs no action.

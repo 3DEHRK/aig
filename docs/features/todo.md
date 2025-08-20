@@ -21,7 +21,7 @@
 - [x] ✅ Implement **Plant-System**:
   - Plant with cursor
 
-- [ ] Implement **Water/Fertilize All**:
+- [x] ✅ Implement **Water/Fertilize All**:
   - Apply to all tiles in radius N (start 5).
   - Skip mature plants.
 

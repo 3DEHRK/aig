@@ -567,8 +567,8 @@ void PlayState::update(sf::Time dt) {
         if (!fx.active) continue; fx.elapsed += dt.asSeconds();
         float t = fx.elapsed;
         if (t >= fx.duration) { fx.active = false; continue; }
-        // phase mapping: 0 squash 0-0.09, 1 pop 0.09-0.18, 2 fade 0.18-0.26, 3 magnetize tail 0.26-0.45
         if (t < 0.09f) fx.phase = 0; else if (t < 0.18f) fx.phase = 1; else if (t < 0.26f) fx.phase = 2; else fx.phase = 3;
+        if (fx.phase == 3) { fx.pos.y -= 30.f * dt.asSeconds(); }
     }
     // prune inactive
     harvestFxList.erase(std::remove_if(harvestFxList.begin(), harvestFxList.end(), [](const HarvestFX& f){ return !f.active; }), harvestFxList.end());
@@ -773,11 +773,12 @@ void PlayState::evaluateDirectives() {
 
 void PlayState::draw() {
     sf::RenderWindow &win = game.getWindow();
-    win.setView(view);
-    // screen shake placeholder using active HarvestFX (minor vertical jitter during pop phase)
+    // create local view so shake does not accumulate
+    sf::View worldView = view;
     float shakeOffset = 0.f;
     for (auto &fx : harvestFxList) if (fx.phase==1) { shakeOffset = std::max(shakeOffset, 3.f); }
-    if (shakeOffset>0.f) view.move(0.f, std::sin(hudTime*40.f)*shakeOffset*0.2f);
+    if (shakeOffset>0.f) worldView.move({0.f, std::sin(hudTime*40.f)*shakeOffset*0.2f});
+    win.setView(worldView);
     map.draw(win, showRailOverlay);
     for (auto &e : entities) e->draw(win);
     for (auto &c : carts) c->draw(win);
@@ -788,22 +789,16 @@ void PlayState::draw() {
         float t = fx.elapsed;
         float alpha = 1.f;
         float scale = 1.f;
-        if (fx.phase==0) { // squash
-            scale = 0.6f + 0.4f * (t/0.09f);
-        } else if (fx.phase==1) { // pop
-            scale = 1.0f + 0.5f * ((t-0.09f)/0.09f);
-        } else if (fx.phase==2) { // fade+shrink
-            float lt = (t-0.18f)/0.08f; scale = 1.5f - 0.4f*lt; alpha = 1.f - lt;
-        } else { // magnet tail (float upward, fade slightly)
-            float lt = (t-0.26f)/(fx.duration-0.26f); scale = 1.1f - 0.5f*lt; alpha = 0.6f - 0.6f*lt; fx.pos.y -= 30.f * (dt.asSeconds());
-        }
+        if (fx.phase==0) { scale = 0.6f + 0.4f * (t/0.09f); }
+        else if (fx.phase==1) { scale = 1.0f + 0.5f * ((t-0.09f)/0.09f); }
+        else if (fx.phase==2) { float lt = (t-0.18f)/0.08f; scale = 1.5f - 0.4f*lt; alpha = 1.f - lt; }
+        else { float lt = (t-0.26f)/(fx.duration-0.26f); scale = 1.1f - 0.5f*lt; alpha = 0.6f - 0.6f*lt; }
         sf::CircleShape circ(10.f);
         circ.setOrigin({10.f,10.f});
         circ.setPosition(fx.pos);
         circ.setScale({scale, scale});
         circ.setFillColor(sf::Color(255, 230, 80, (uint8_t)std::clamp(alpha*255.f,0.f,255.f)));
         win.draw(circ);
-        // yield text popup on first frame of pop
         if (fx.phase==1) {
             try {
                 auto &f = game.resources().font("assets/fonts/arial.ttf");
